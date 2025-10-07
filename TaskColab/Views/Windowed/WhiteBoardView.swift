@@ -8,6 +8,7 @@
 import SwiftUI
 internal import OSCKitCore
 import simd
+import Photos
 
 struct StrokeLocal: Identifiable, Equatable{
     var id : UUID
@@ -45,6 +46,9 @@ struct WhiteBoardView: View {
     
     @State private var currentColor: Color = .black
     @State private var currentColorRGBA: SIMD4<Float> = .init(0,0,0,1)
+    
+    @State private var shareURL: URL? = nil
+    @State private var lastSnapshotImage: UIImage? = nil
     
     var body: some View {
         VStack(spacing: 12) {
