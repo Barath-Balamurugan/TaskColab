@@ -1,0 +1,85 @@
+//
+//  ImmersiveView.swift
+//  TaskColab
+//
+//  Created by Barath Balamurugan on 11/08/25.
+//
+
+import SwiftUI
+import RealityKit
+import ARKit
+import simd
+import Spatial
+
+struct ImmersiveViewOri: View {
+    
+    @Environment(AppModel.self) private var appModel
+    
+    @State private var deviceTransform: simd_float4x4 = .init()
+    @State private var cube: ModelEntity?
+    @Environment(\.immersiveSpaceDisplacement) private var spaceDisplacement  // meters
+
+    var body: some View {
+        RealityView{ content in
+            let cubeEntity = ModelEntity(
+                mesh: .generateBox(size: 0.15),
+                materials: [SimpleMaterial(color: .blue, isMetallic: false)]
+            )
+            
+            cubeEntity.position = SIMD3<Float>(0, 0, 0)
+            
+            content.add(cubeEntity)
+            
+            cube = cubeEntity
+            
+            Task{
+                let session = ARKitSession()
+                let tracking = WorldTrackingProvider()
+                try await session.run([tracking])
+                
+                while true {
+                    if let cube = cube {
+                        // Get cube world position
+                        let cubeWorldPos = cube.position(relativeTo: nil)
+                        appModel.anchorPosition = cubeWorldPos
+                        
+                        // Get device (head) position from ARKit
+                        if let deviceAnchor = tracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime()) {
+                            let deviceTransform = deviceAnchor.originFromAnchorTransform
+                            let deviceWorldPos = SIMD3<Float>(
+                                deviceTransform.columns.3.x,
+                                deviceTransform.columns.3.y,
+                                deviceTransform.columns.3.z
+                            )
+                            appModel.userPosition = deviceWorldPos
+                            
+                            // Calculate user position relative to cube
+                            let relativePos = deviceWorldPos - cubeWorldPos
+                            appModel.relativePosition = relativePos
+                            
+//                            print("=== Position Data ===")
+//                            print("Cube World Position: X: \(cubeWorldPos.x), Y: \(cubeWorldPos.y), Z: \(cubeWorldPos.z)")
+//                            print("User World Position: X: \(deviceWorldPos.x), Y: \(deviceWorldPos.y), Z: \(deviceWorldPos.z)")
+//                            print("User Relative to Cube: X: \(relativePos.x), Y: \(relativePos.y), Z: \(relativePos.z)")
+//                            print("Distance to Cube: \(length(relativePos)) meters")
+//                            print("Device Tranform: \(deviceTransform)")
+//                            print("---")
+                        }
+                    }
+                    try await Task.sleep(nanoseconds: 33_000_000) // ~30 fps
+                }
+            }
+        }
+    }
+}
+
+//extension SIMD4<Float> {
+//    var xyz: SIMD3<Float> {
+//        SIMD3<Float>(x, y, z)
+//    }
+//}
+
+//#Preview(immersionStyle: .mixed) {
+//    ImmersiveView()
+//        .environment(AppModel())
+//}
