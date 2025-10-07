@@ -29,30 +29,37 @@ private extension SIMD4<Float> { var points_3d: SIMD3<Float> { .init(x, y, z) } 
 /// Minimal local-only whiteboard.
 /// Draw with a drag, Clear removes everything.
 struct WhiteBoardView: View {
+    @EnvironmentObject private var wbStore: WhiteboardStore
+    
     @Environment(AppModel.self) private var appModel
     @State private var oscSender = OSCManager()
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var sharePlayManager: SharePlayManager
     
-    @State private var strokes: [StrokeLocal] = []
-    @State private var inProgress: [UUID: StrokeLocal] = [:]
+//    @State private var strokes: [StrokeLocal] = []
+//    @State private var inProgress: [UUID: StrokeLocal] = [:]
     @State private var localStrokeID: UUID? = nil
     @State private var outgoingBuffer: [WBPointN] = []
     @State private var lastSentCount = 0
     
     @State private var currentStroke: StrokeLocal?
-    @State private var lineWidth: CGFloat = 6
+//    @State private var lineWidth: CGFloat = 6
     @State private var canvasSize: CGSize = .zero
     
     @State private var boardWorldTransform: simd_float4x4 = matrix_identity_float4x4
     @State private var boardSizeMeters: CGSize = .init(width: 1.0, height: 0.6)
     
-    @State private var currentColor: Color = .black
+//    @State private var currentColor: Color = .black
     @State private var currentColorRGBA: SIMD4<Float> = .init(0,0,0,1)
     
     @Environment(\.displayScale) private var displayScale
     @State private var stagedPNGURL: URL? = nil      // where we stage the PNG before moving
     @State private var showFileMover = false
+    
+    @State private var showSavedBanner = false
+    @State private var savedBannerText = "Saved"
+    @State private var showErrorAlert = false
+    @State private var errorMessage = ""
     
     var body: some View {
         VStack(spacing: 12) {
@@ -66,9 +73,9 @@ struct WhiteBoardView: View {
                 
                 // Drawing canvas
                 Canvas { ctx, _ in
-                    for s in strokes { drawStroke(s, in: &ctx) }
+                    for s in wbStore.strokes { drawStroke(s, in: &ctx) }
 //                    if let s = currentStroke { drawStroke(s, in: &ctx) }
-                    for s in inProgress.values { drawStroke(s, in: &ctx)}
+                    for s in wbStore.inProgress.values { drawStroke(s, in: &ctx)}
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
@@ -84,14 +91,14 @@ struct WhiteBoardView: View {
                             if localStrokeID == nil {
                                 let id = UUID()
                                 localStrokeID = id
-                                inProgress[id] = StrokeLocal(id: id, width: lineWidth, points: [], color: currentColor)
+                                wbStore.inProgress[id] = StrokeLocal(id: id, width: wbStore.lineWidth, points: [], color: wbStore.currentColor)
                                 // send begin
                                 Task {
                                     await sharePlayManager.sendWhiteBoard(
                                         WBMessage(type: .begin,
                                                   id: id,
                                                   points: nil,
-                                                  width: lineWidth,
+                                                  width: wbStore.lineWidth,
                                                   color: WBColorN(r: currentColorRGBA.x,
                                                                   g: currentColorRGBA.y,
                                                                   b: currentColorRGBA.z,
@@ -99,27 +106,27 @@ struct WhiteBoardView: View {
                                                   strokesSnapshot: nil)
                                     )
                                 }
-                                sendWBBegin(id: id, width: lineWidth, color: currentColorRGBA)
+                                sendWBBegin(id: id, width: wbStore.lineWidth, color: currentColorRGBA)
                                 outgoingBuffer.removeAll(keepingCapacity: true)
                                 lastSentCount = 0
                             }
                             
                             if let id = localStrokeID {
-                                inProgress[id]?.points.append(value.location)
+                                wbStore.inProgress[id]?.points.append(value.location)
                                 bufferAndMaybeSend(for: id, point: value.location)
 //                                print(value.location)
                             }
                         }
                         .onEnded { value in
-                            guard let id = localStrokeID, var s = inProgress[id] else { return }
+                            guard let id = localStrokeID, var s = wbStore.inProgress[id] else { return }
                             s.points.append(value.location)
-                            inProgress[id] = s
+                            wbStore.inProgress[id] = s
 
                             bufferAndMaybeSend(for: id, point: value.location, forceFlush: true)
 
                             // finalize
-                            if let done = inProgress.removeValue(forKey: id) {
-                                strokes.append(done)
+                            if let done = wbStore.inProgress.removeValue(forKey: id) {
+                                wbStore.strokes.append(done)
                             }
                             localStrokeID = nil
 
@@ -137,8 +144,8 @@ struct WhiteBoardView: View {
             // Controls
             HStack(spacing: 12) {
                 Button {
-                    guard let last = strokes.last else { return }
-                    strokes.removeLast()
+                    guard let last = wbStore.strokes.last else { return }
+                    wbStore.strokes.removeLast()
                     Task {
                         await sharePlayManager.sendWhiteBoard(
                             WBMessage(type: .remove, id: last.id, points: nil, width: nil, strokesSnapshot: nil)
@@ -150,7 +157,7 @@ struct WhiteBoardView: View {
                 }
                 
                 Button(role: .destructive) {
-                    strokes.removeAll()
+                    wbStore.strokes.removeAll()
                     currentStroke = nil
                     Task {
                         await sharePlayManager.sendWhiteBoard(
@@ -170,34 +177,35 @@ struct WhiteBoardView: View {
                             .fill(c)
                             .frame(width: 22, height: 22)
                             .overlay(Circle().stroke(Color.black.opacity(0.15), lineWidth: 1))
-                            .onTapGesture { currentColor = c }
+                            .onTapGesture { wbStore.currentColor = c }
                     }
                     Divider().frame(height: 24)
 
                     // fine-grained picker
-                    ColorPicker("", selection: $currentColor, supportsOpacity: true)
+                    ColorPicker("", selection: $wbStore.currentColor, supportsOpacity: true)
                         .labelsHidden()
                 }
                 
                 HStack(spacing: 8) {
                     Image(systemName: "scribble")
-                    Slider(value: $lineWidth, in: 2...18)
+                    Slider(value: $wbStore.lineWidth, in: 2...18)
                         .frame(width: 160)
                 }
-                
-                Button("Done") { dismiss() }
-                    .buttonStyle(.borderedProminent)
                 
                 Button {
                     saveToPhotosLibrary()
                 } label: {
                     Label("Save", systemImage: "photo")
                 }
+                
+                Button("Close") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+                
             }
         }
         .padding()
         .onAppear{
-            updateRGBA(from: currentColor)
+            updateRGBA(from: wbStore.currentColor)
         }
         .onReceive(sharePlayManager.whiteboardEvents) { message in
             applyRemote(message)
@@ -207,7 +215,7 @@ struct WhiteBoardView: View {
             guard isOn else { return }
             Task { await broadcastSnapshotIfAny() }
         }
-        .onChange(of: currentColor){
+        .onChange(of: wbStore.currentColor){
             updateRGBA(from: $0)
         }
         .task {
@@ -221,9 +229,9 @@ struct WhiteBoardView: View {
             onCompletion: { result in
                 switch result {
                 case .success(let newURL):
-                    print("Saved to:", newURL.path)
+                    showSavedToast("Saved: \(newURL.lastPathComponent)")
                 case .failure(let error):
-                    print("File move failed:", error)
+                    fail("Save failed\(error.localizedDescription.isEmpty ? "" : ": \(error.localizedDescription)")")
                 }
                 // Clean up the staged temp file if you want:
                 if let staged = stagedPNGURL {
@@ -232,6 +240,18 @@ struct WhiteBoardView: View {
                 stagedPNGURL = nil
             }
         )
+        .overlay(alignment: .top) {
+            if showSavedBanner {
+                SaveBanner(text: savedBannerText)
+                    .padding(.top, 20)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .alert("Couldn’t Save", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
     }
     
     private func drawStroke(_ stroke: StrokeLocal, in ctx: inout GraphicsContext) {
@@ -250,8 +270,8 @@ struct WhiteBoardView: View {
         let content = WhiteboardSnapshotView(
             backgroundName: "SolarIllumination",
             size: canvasSize,
-            strokes: strokes,
-            inProgress: inProgress
+            strokes: wbStore.strokes,
+            inProgress: wbStore.inProgress
         )
         let renderer = ImageRenderer(content: content)
         renderer.scale = displayScale
@@ -317,9 +337,31 @@ struct WhiteBoardView: View {
                     creation.addResource(with: .photo, data: pngData, options: options)
                 }
             } completionHandler: { success, err in
-                if !success { print("Save to Photos failed:", err ?? "") }
+                DispatchQueue.main.async {
+                    if success {
+                        showSavedToast("Saved to Photos")
+                    } else {
+                        fail("Save to Photos failed\(err.map { ": \($0.localizedDescription)" } ?? "")")
+                    }
+                }
             }
         }
+    }
+    
+    // MARK: - Toast
+    private func showSavedToast(_ text: String) {
+        savedBannerText = text
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+            showSavedBanner = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            withAnimation(.easeInOut(duration: 0.25)) { showSavedBanner = false }
+        }
+    }
+    
+    private func fail(_ message: String) {
+        errorMessage = message
+        showErrorAlert = true
     }
     
     // MARK: - Outgoing
@@ -358,10 +400,10 @@ struct WhiteBoardView: View {
     }
     
     private func broadcastSnapshotIfAny() async {
-        guard !strokes.isEmpty else { return }
+        guard !wbStore.strokes.isEmpty else { return }
 
         // Convert local strokes to normalized snapshot
-        let snap: [WBStroke] = strokes.map { s in
+        let snap: [WBStroke] = wbStore.strokes.map { s in
             let c = UIColor(s.color)
             var r: CGFloat=0,g:CGFloat=0,b:CGFloat=0,a:CGFloat=0
             c.getRed(&r,green: &g,blue: &b,alpha: &a)
@@ -424,52 +466,52 @@ struct WhiteBoardView: View {
         switch msg.type {
             case .begin:
                 guard let id = msg.id, let w = msg.width else { return }
-                if inProgress[id] == nil && !strokes.contains(where: { $0.id == id }) {
+                if wbStore.inProgress[id] == nil && !wbStore.strokes.contains(where: { $0.id == id }) {
                     let col: Color = {
                         if let c = msg.color { return Color(.sRGB, red: Double(c.r), green: Double(c.g), blue: Double(c.b), opacity: Double(c.a)) }
                         return .black
                     }()
-                    inProgress[id] = StrokeLocal(id: id, width: w, points: [], color: col)
+                wbStore.inProgress[id] = StrokeLocal(id: id, width: w, points: [], color: col)
                 }
 
             case .append:
                 guard let id = msg.id, let pts = msg.points else { return }
-                if var s = inProgress[id] {
+                if var s = wbStore.inProgress[id] {
                     s.points.append(contentsOf: pts.map(denormalize))
-                    inProgress[id] = s
-                } else if let idx = strokes.firstIndex(where: { $0.id == id }) {
-                    var s = strokes[idx]
+                    wbStore.inProgress[id] = s
+                } else if let idx = wbStore.strokes.firstIndex(where: { $0.id == id }) {
+                    var s = wbStore.strokes[idx]
                     s.points.append(contentsOf: pts.map(denormalize))
-                    strokes[idx] = s
+                    wbStore.strokes[idx] = s
                 } else {
                     // late start: create an in-progress placeholder
                     let col: Color = {
                         if let c = msg.color { return Color(.sRGB, red: Double(c.r), green: Double(c.g), blue: Double(c.b), opacity: Double(c.a)) }
                         return .black
                     }()
-                    inProgress[id] = StrokeLocal(id: id, width: msg.width ?? lineWidth, points: pts.map(denormalize), color: col)
+                    wbStore.inProgress[id] = StrokeLocal(id: id, width: msg.width ?? wbStore.lineWidth, points: pts.map(denormalize), color: col)
                 }
 
             case .end:
                 guard let id = msg.id else { return }
-                if let done = inProgress.removeValue(forKey: id) {
-                    strokes.append(done)
+                if let done = wbStore.inProgress.removeValue(forKey: id) {
+                    wbStore.strokes.append(done)
                 }
 
             case .remove:
                 guard let id = msg.id else { return }
-                if inProgress.removeValue(forKey: id) == nil {
-                    if let idx = strokes.firstIndex(where: { $0.id == id }) { strokes.remove(at: idx) }
+                if wbStore.inProgress.removeValue(forKey: id) == nil {
+                    if let idx = wbStore.strokes.firstIndex(where: { $0.id == id }) { wbStore.strokes.remove(at: idx) }
                 }
 
             case .clear:
-                inProgress.removeAll()
-                strokes.removeAll()
+                wbStore.inProgress.removeAll()
+                wbStore.strokes.removeAll()
 
             case .snapshot:
                 guard let remote = msg.strokesSnapshot else { return }
-                inProgress.removeAll()
-                strokes = remote.map { r in
+                wbStore.inProgress.removeAll()
+                wbStore.strokes = remote.map { r in
                     let col: Color = {
                         if let c = r.color { return Color(.sRGB, red: Double(c.r), green: Double(c.g), blue: Double(c.b), opacity: Double(c.a)) }
                         return .black

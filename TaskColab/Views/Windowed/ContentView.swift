@@ -15,6 +15,8 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var sharePlayManager: SharePlayManager
     
+    @StateObject private var wbStore = WhiteboardStore()
+    
     @State private var showWhiteboard = false
     @StateObject private var recorder = AudioRecorder()
     
@@ -175,6 +177,7 @@ struct ContentView: View {
         .sheet(isPresented: $showWhiteboard) {   // ← add this
             WhiteBoardView()
                 .presentationDetents([.medium, .large])
+                .environmentObject(wbStore)
         }
         .onChange(of: sharePlayManager.isSharing) { _, isSharing in
             if isSharing {
