@@ -10,6 +10,9 @@ internal import OSCKitCore
 import simd
 import Photos
 
+import UniformTypeIdentifiers
+import ImageIO
+
 struct StrokeLocal: Identifiable, Equatable{
     var id : UUID
     var width: CGFloat
@@ -47,8 +50,9 @@ struct WhiteBoardView: View {
     @State private var currentColor: Color = .black
     @State private var currentColorRGBA: SIMD4<Float> = .init(0,0,0,1)
     
-    @State private var shareURL: URL? = nil
-    @State private var lastSnapshotImage: UIImage? = nil
+    @Environment(\.displayScale) private var displayScale
+    @State private var stagedPNGURL: URL? = nil      // where we stage the PNG before moving
+    @State private var showFileMover = false
     
     var body: some View {
         VStack(spacing: 12) {
@@ -183,6 +187,12 @@ struct WhiteBoardView: View {
                 
                 Button("Done") { dismiss() }
                     .buttonStyle(.borderedProminent)
+                
+                Button {
+                    saveToPhotosLibrary()
+                } label: {
+                    Label("Save", systemImage: "photo")
+                }
             }
         }
         .padding()
@@ -205,6 +215,23 @@ struct WhiteBoardView: View {
                 await broadcastSnapshotIfAny()
             }
         }
+        .fileMover(
+            isPresented: $showFileMover,
+            file: stagedPNGURL,
+            onCompletion: { result in
+                switch result {
+                case .success(let newURL):
+                    print("Saved to:", newURL.path)
+                case .failure(let error):
+                    print("File move failed:", error)
+                }
+                // Clean up the staged temp file if you want:
+                if let staged = stagedPNGURL {
+                    try? FileManager.default.removeItem(at: staged)
+                }
+                stagedPNGURL = nil
+            }
+        )
     }
     
     private func drawStroke(_ stroke: StrokeLocal, in ctx: inout GraphicsContext) {
@@ -216,6 +243,83 @@ struct WhiteBoardView: View {
             with: .color(stroke.color),
             style: StrokeStyle(lineWidth: stroke.width, lineCap: .round, lineJoin: .round)
         )
+    }
+    
+    private func renderCurrentCGImage() -> CGImage? {
+        guard canvasSize != .zero else { return nil }
+        let content = WhiteboardSnapshotView(
+            backgroundName: "SolarIllumination",
+            size: canvasSize,
+            strokes: strokes,
+            inProgress: inProgress
+        )
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = displayScale
+        return renderer.cgImage
+    }
+    
+    private func pngData(from cgImage: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(
+            data,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else { return nil }
+        CGImageDestinationAddImage(dest, cgImage, nil)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+        return data as Data
+    }
+
+    /// Create a PNG in a temp file for further actions (move to Files, etc.)
+    private func stagePNGToTemporary() -> URL? {
+        guard let cg = renderCurrentCGImage(),
+              let data = pngData(from: cg) else { return nil }
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Whiteboard-\(UUID().uuidString).png")
+        do {
+            try data.write(to: url)
+            return url
+        } catch {
+            print("Failed to write PNG:", error)
+            return nil
+        }
+    }
+    
+    private func saveToPhotosLibrary() {
+        guard let cg = renderCurrentCGImage(),
+              let dataProvider = CGDataProvider(data: pngData(from: cg)! as CFData),
+              let pngCGImage = CGImage(
+                pngDataProviderSource: dataProvider,
+                decode: nil,
+                shouldInterpolate: true,
+                intent: .defaultIntent
+              )
+        else {
+            print("Could not rebuild PNG CGImage for Photos")
+            return
+        }
+
+        // visionOS: request permission and save
+        PHPhotoLibrary.requestAuthorization { status in
+            guard status == .authorized || status == .limited else {
+                print("Photos access not granted")
+                return
+            }
+            PHPhotoLibrary.shared().performChanges {
+                // Convert CGImage -> UIImage-equivalent asset creation via CIImage fallback:
+                // The Photos API can take a Data asset directly via PHAssetCreationRequest
+                let creation = PHAssetCreationRequest.forAsset()
+                if let pngData = pngData(from: cg) {
+                    let options = PHAssetResourceCreationOptions()
+                    options.uniformTypeIdentifier = UTType.png.identifier
+                    creation.addResource(with: .photo, data: pngData, options: options)
+                }
+            } completionHandler: { success, err in
+                if !success { print("Save to Photos failed:", err ?? "") }
+            }
+        }
     }
     
     // MARK: - Outgoing

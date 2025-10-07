@@ -179,6 +179,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(TARGET_NAME)/Info.plist";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TaskColab needs microphone access to record audio notes.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app saves whiteboard snapshots to your photo library.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -212,6 +213,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(TARGET_NAME)/Info.plist";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TaskColab needs microphone access to record audio notes.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app saves whiteboard snapshots to your photo library.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
