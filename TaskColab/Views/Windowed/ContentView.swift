@@ -100,7 +100,7 @@ struct ContentView: View {
                     openWindow(id: "personal-panel")
                 }
             }
-            .navigationTitle("Home")
+            .navigationTitle("")
             .toolbar {
                 // Optional gear to re-open settings later
                 ToolbarItem(placement: .topBarTrailing) {
