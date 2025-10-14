@@ -15,7 +15,7 @@ struct TaskColabApp: App {
     @State var oscManager = OSCManager()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "content-view"){
             ContentView()
                 .environment(appModel)
                 .environmentObject(sharePlayManager)
