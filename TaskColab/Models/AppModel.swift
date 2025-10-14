@@ -30,9 +30,18 @@ class AppModel {
     var ipAddress: String = ""
     var portNumber: UInt16 = 9000
     
+    var selectedDay: Day = .day1
+    
     var isIpEntered: Bool {
         !ipAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     
     var isImmersed: Bool = false
+    
+    var userOrdinal: Int {
+        let digits = userID.filter(\.isNumber)
+        if let n2 = Int(digits.suffix(2)), n2 > 0 { return n2 }   // "3001" -> 1, "3012" -> 12
+        if let n1 = Int(digits.suffix(1))       { return n1 }     // fallback
+        return 1
+    }
 }

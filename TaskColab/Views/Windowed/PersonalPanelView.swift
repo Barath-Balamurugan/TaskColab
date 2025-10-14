@@ -15,55 +15,23 @@ struct PersonalPanelView: View {
                     .font(.title3).fontWeight(.semibold)
                 Spacer()
             }
+            
+            // --- Image chosen by (selectedDay, userID) ---
+            let asset = ImageMatrix.assetName(for: appModel.selectedDay, userID: appModel.userID)
 
-            // Example: local-only tweak
-//            HStack(spacing: 12) {
-//                Text("Line Width")
-//                Slider(value: $localLineWidth, in: 1...16, step: 1)
-//                Text("\(Int(localLineWidth))")
-//                    .monospacedDigit()
-//                    .frame(width: 32)
-//            }
-            switch appModel.userID {
-                case "3001":
-                    Image("SolarIllumination")
-                        .resizable()
-                        .scaledToFit()
-                        .cornerRadius(16)
-                        .padding(15)
-                case "3002":
-                    Image("EarthIllumination")
-                        .resizable()
-                        .scaledToFit()
-                        .cornerRadius(16)
-                        .padding(15)
-                case "3003":
-                    Image("GeologicalUnits")
-                        .resizable()
-                        .scaledToFit()
-                        .cornerRadius(16)
-                        .padding(15)
-                default:
-                    Image("SiteRanking")
-                        .resizable()
-                        .scaledToFit()
-                        .cornerRadius(16)
-                        .padding(15)
-            }
+            Image(asset)
+                .resizable()
+                .scaledToFit()
+                .cornerRadius(16)
+                .padding(15)
 
             // Example: quick local info
             if showDiagnostics {
                 VStack(alignment: .leading, spacing: 6) {
+                    Text("Day: \(appModel.selectedDay.title)")
+                    Text("User Ordinal: \(appModel.userOrdinal)")
                     Text("IP: \(appModel.ipAddress)")
                     Text("Port: \(appModel.portNumber)")
-                    Text(
-                      String(
-                        format: "Rel. Position → x: %.2f, y: %.2f, z: %.2f",
-                        appModel.relativePosition.x,
-                        appModel.relativePosition.y,
-                        appModel.relativePosition.z
-                      )
-                    )
                 }
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -72,10 +40,10 @@ struct PersonalPanelView: View {
 
             Spacer()
 
-//            HStack {
-//                Toggle("Show Diagnostics", isOn: $showDiagnostics)
-//                Spacer()
-//            }
+            HStack {
+                Toggle("Show Diagnostics", isOn: $showDiagnostics)
+                Spacer()
+            }
         }
         .padding(25)
     }

@@ -24,9 +24,6 @@ struct ContentView: View {
     @State private var showWhiteboard = false
     @StateObject private var recorder = AudioRecorder()
     
-    @State private var selectedDay: Day = .day1
-    @State private var selectedUserId: Int = 1
-    
     @AppStorage("hasCompletedSetup") private var hasCompletedSetup = false
     @State private var path = NavigationPath()
     
@@ -46,9 +43,9 @@ struct ContentView: View {
                     HStack(spacing: 100) {
                         ForEach(Day.allCases) { day in
                             RadioButton(
-                                isSelected: selectedDay == day,
+                                isSelected: appModel.selectedDay == day,
                                 title: day.title
-                            ) { selectedDay = day }
+                            ) { appModel.selectedDay = day }
                         }
                     }
                     .padding(.vertical, 4)
@@ -78,6 +75,11 @@ struct ContentView: View {
                     
                     Button("Open Whiteboard") {      // ← add this
                         showWhiteboard = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    
+                    Button("Open Whiteboard") {      // ← add this
+                        openWindow(id: "personal-panel")
                     }
                     .buttonStyle(.borderedProminent)
                     
