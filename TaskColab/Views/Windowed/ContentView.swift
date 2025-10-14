@@ -20,159 +20,68 @@ struct ContentView: View {
     @State private var showWhiteboard = false
     @StateObject private var recorder = AudioRecorder()
     
+    @State private var selectedDay: Day = .day1
+    @State private var selectedUserId: Int = 1
+
+    
     var body: some View {
         NavigationStack {
-            VStack(spacing: 25) {
+            VStack() {
                 
-                Text("Task Colab")
+                Text("Moon Reader")
                     .font(.extraLargeTitle)
                     .fontWeight(.heavy)
                     .foregroundColor(.primary)
-                    .padding(20)
+                
+//                Label(appModel.isImmersed ? "Immersive: ON" : "Immersive: OFF", systemImage: appModel.isImmersed ? "cube.inside.fill" : "cube.inside.empty")
                 
                 Spacer()
                 
-                HStack{
-                    HStack {
-                        Image(systemName: "person.circle.fill")
-                            .foregroundColor(.secondary)
-                        
-                        TextField(
-                            "Enter your User ID - (300x)",
-                            text: Binding(
-                                get: { appModel.userID },
-                                set: { appModel.userID = $0 }
-                            )
-                        )
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .keyboardType(.numbersAndPunctuation)
-                        .frame(maxWidth: 200)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    HStack {
-                        Image(systemName: "globe")
-                            .foregroundColor(.secondary)
-                        
-                        TextField(
-                            "Enter the IP Address",
-                            text: Binding(
-                                get: { appModel.ipAddress },
-                                set: { appModel.ipAddress = $0 }
-                            )
-                        )
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .keyboardType(.numbersAndPunctuation)
-                        .frame(maxWidth: 200)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    HStack {
-                        Image(systemName: "globe")
-                            .foregroundColor(.secondary)
-                        
-                        TextField(
-                            "Enter the Port Number",
-                            text: Binding(
-                                get: { String(appModel.portNumber) },
-                                set: {
-                                    let digits = $0.filter(\.isNumber)
-                                    if let v = UInt16(digits) { appModel.portNumber = v }
-                                }
-                            )
-                        )
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .keyboardType(.numberPad)
-                        .frame(maxWidth: 200)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                }
-                
-                //            Text(String(format: "Cube World Position: x: %.2f, y: %.2f, z: %.2f", appModel.anchorPosition.x, appModel.anchorPosition.y, appModel.anchorPosition.z))
-                //            Text(String(format: "User World Position: x: %.2f, y: %.2f, z: %.2f", appModel.userPosition.x, appModel.userPosition.y, appModel.userPosition.z))
-                //            Text(String(format: "User Relative to Cube: x: %.2f, y: %.2f, z: %.2f", appModel.relativePosition.x, appModel.relativePosition.y, appModel.relativePosition.z))
-                
-                Label(appModel.isImmersed ? "Immersive: ON" : "Immersive: OFF", systemImage: appModel.isImmersed ? "cube.inside.fill" : "cube.inside.empty")
-                
-                Group {
-                    if recorder.permissionGranted {
-                        HStack(spacing: 12) {
-                            Button {
-                                recorder.toggle()
-                            } label: {
-                                Label(recorder.isRecording ? "Stop Recording" : "Record Audio",
-                                      systemImage: recorder.isRecording ? "stop.circle.fill" : "mic.circle.fill")
-                                .labelStyle(.titleAndIcon)
-                            }
-                            //                        .buttonStyle(recorder.isRecording ? .borderedProminent : .bordered)
-                            
-                            // Elapsed time
-                            Text(timeString(recorder.elapsed))
-                                .monospacedDigit()
-                                .foregroundStyle(recorder.isRecording ? .red : .secondary)
-                            
-                            // Share last file if exists
-                            if let url = recorder.lastRecordingURL {
-                                ShareLink(item: url) {
-                                    Label("Share Last", systemImage: "square.and.arrow.up")
-                                }
-                            }
+                Section() {
+                    // Horizontal radios (scrolls if it gets tight)
+                    HStack(spacing: 100) {
+                        ForEach(Day.allCases) { day in
+                            RadioButton(
+                                isSelected: selectedDay == day,
+                                title: day.title
+                            ) { selectedDay = day }
                         }
-                        .padding(.top, 8)
-                    } else {
-                        HStack(spacing: 8) {
-                            Image(systemName: "mic.slash")
-                            Text("Microphone access is required to record audio.")
-                            Button("Enable") {
-                                Task { await recorder.requestPermissionIfNeeded() }
-                            }
-                        }
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 8)
                     }
+                    .padding(.vertical, 4)
+                    
                 }
                 
                 Spacer()
                 
                 HStack(spacing: 18) {
-                    Button("Open Immersive Space") {
-                        Task { await openSpace() }
-                        appModel.isImmersed.toggle()
-                    }
-                    .disabled(!appModel.isIpEntered || appModel.immersiveSpaceState == .open)
-                    
-                    Button("Close Immersive Space"){
-                        Task{ await closeSpace() }
-                        appModel.isImmersed.toggle()
-                    }
-                    .disabled(appModel.immersiveSpaceState != .open)
-                    
-                    Button("Open Whiteboard") {      // ← add this
-                        showWhiteboard = true
-                        //                    Task { await sharePlayManager.send(.init(kind: .openWhiteboard)) }
+                    Button {
+                        Task {
+                            if appModel.isImmersed {
+                                // Close first, then flip the flag
+                                await closeSpace()
+                                appModel.isImmersed = false
+                            } else {
+                                // Open first, then flip the flag
+                                await openSpace()
+                                appModel.isImmersed = true
+                            }
+                        }
+                    } label: {
+                        Label(appModel.isImmersed ? "Close Immersive Space" : "Open Immersive Space",
+                              systemImage: appModel.isImmersed ? "xmark.circle.fill" : "sparkles")
                     }
                     .buttonStyle(.borderedProminent)
                     
-                    Button("Open My Personal Window") {
-                        openWindow(id: "personal-panel")
+                    Button("Open Whiteboard") {      // ← add this
+                        showWhiteboard = true
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
+                    
+                    SharePlayButton("SharePlay", activity: ColabGroupActivity())
+                        .padding(.vertical, 20)
                 }
                 
                 Spacer()
-                
-                SharePlayButton("SharePlay", activity: ColabGroupActivity())
-                    .padding(.vertical, 20)
-                
             }
             .padding()
             .sheet(isPresented: $showWhiteboard) {   // ← add this
@@ -185,7 +94,7 @@ struct ContentView: View {
                     openWindow(id: "personal-panel")
                 }
             }
-            .navigationTitle("Colab")
+            .navigationTitle("")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
