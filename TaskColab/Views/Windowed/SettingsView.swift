@@ -14,6 +14,9 @@ struct SettingsView: View {
     
     @FocusState private var focusedField: Field?
     enum Field: Hashable { case userId, ip, port }
+    
+    @AppStorage("hasCompletedSetup") private var hasCompletedSetup = false
+    @Environment(\.dismiss) private var dismiss
 
     /// Called when the user taps Done and validation passes
     var onDone: ((String, String, Int) -> Void)?
@@ -102,6 +105,11 @@ struct SettingsView: View {
         appModel.userID = userId
         appModel.ipAddress = ipAddress
         appModel.portNumber = UInt16(p)
+        
+        onDone?(userId, ipAddress, p)
+        
+        hasCompletedSetup = true
+        dismiss()
     }
 }
 

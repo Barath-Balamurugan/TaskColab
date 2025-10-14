@@ -8,6 +8,10 @@
 import SwiftUI
 import RealityKit
 
+enum Route: Hashable {
+    case settings
+}
+
 struct ContentView: View {
     @Environment(AppModel.self) var appModel
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
@@ -22,18 +26,18 @@ struct ContentView: View {
     
     @State private var selectedDay: Day = .day1
     @State private var selectedUserId: Int = 1
-
+    
+    @AppStorage("hasCompletedSetup") private var hasCompletedSetup = false
+    @State private var path = NavigationPath()
     
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             VStack() {
                 
                 Text("Moon Reader")
                     .font(.extraLargeTitle)
                     .fontWeight(.heavy)
                     .foregroundColor(.primary)
-                
-//                Label(appModel.isImmersed ? "Immersive: ON" : "Immersive: OFF", systemImage: appModel.isImmersed ? "cube.inside.fill" : "cube.inside.empty")
                 
                 Spacer()
                 
@@ -94,15 +98,31 @@ struct ContentView: View {
                     openWindow(id: "personal-panel")
                 }
             }
-            .navigationTitle("")
+            .navigationTitle("Home")
             .toolbar {
+                // Optional gear to re-open settings later
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        SettingsView()
-                            .environment(appModel)
+                    Button {
+                        path.append(Route.settings)
                     } label: {
                         Image(systemName: "gearshape")
                     }
+                    .accessibilityLabel("Settings")
+                }
+            }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .settings:
+                    SettingsView ()
+                        .environment(appModel)
+                }
+            }
+            .task {
+                // Auto-push Settings only if not completed
+                if !hasCompletedSetup {
+                    // tiny delay to ensure the stack is ready before pushing
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    path.append(Route.settings)
                 }
             }
         }
