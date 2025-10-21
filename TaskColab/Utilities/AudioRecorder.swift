@@ -25,37 +25,58 @@ final class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     }
 
     func requestPermissionIfNeeded() async {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-            try session.setActive(true)
-        } catch {
-            print("Audio session error:", error)
+//        let session = AVAudioSession.sharedInstance()
+//        do {
+//            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+//            try session.setActive(true)
+//        } catch {
+//            print("Audio session error:", error)
+//        }
+//
+//        let status = await AVAudioApplication.requestRecordPermission()
+//        permissionGranted = status
+        if #available(visionOS 1.0, iOS 17.0, *) {
+            // If you're targeting visionOS, AVAudioApplication is fine.
+            let ok = await AVAudioApplication.requestRecordPermission()
+            permissionGranted = ok
+        } else {
+            // Fallback for iOS/macCatalyst
+            let session = AVAudioSession.sharedInstance()
+            await withCheckedContinuation { cont in
+                session.requestRecordPermission { ok in
+                    cont.resume(returning: ok)
+                }
+            }
         }
-
-        let status = await AVAudioApplication.requestRecordPermission()
-        permissionGranted = status
     }
 
     func start() {
         guard permissionGranted else { return }
 
-        let filename = Self.timestampedFilename()
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
-
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: 44_100,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-        ]
-
         do {
+            // 1) Configure the session to MIX with FaceTime (local mic only)
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord,
+                                    mode: .default,
+                                    options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth])
+            try session.setActive(true) // activate right before use
+
+            // 2) Build the URL in Documents/Recordings
+            let url = try newRecordingURL()
+
+            // 3) Recorder settings
+            let settings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 44_100,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            ]
+
             recorder = try AVAudioRecorder(url: url, settings: settings)
             recorder?.delegate = self
             recorder?.isMeteringEnabled = true
             recorder?.record()
+
             isRecording = true
             elapsed = 0
             startTick()
@@ -71,6 +92,8 @@ final class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         recorder = nil
         isRecording = false
         stopTick()
+        
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     func toggle() {
@@ -89,6 +112,20 @@ final class AudioRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     private func stopTick() {
         tick?.invalidate()
         tick = nil
+    }
+    
+    private func recordingsDirectory() throws -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = docs.appendingPathComponent("Recordings", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+    
+    private func newRecordingURL() throws -> URL {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let name = "Recording_\(df.string(from: Date())).m4a"
+        return try recordingsDirectory().appendingPathComponent(name)
     }
 
     static func timestampedFilename() -> String {

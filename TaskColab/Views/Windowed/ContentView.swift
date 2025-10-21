@@ -81,6 +81,23 @@ struct ContentView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     
+//                    Button {
+//                        recorder.toggle()
+//                    } label: {
+//                        Label(recorder.isRecording ? "Stop Recording" : "Record Mic",
+//                              systemImage: recorder.isRecording ? "stop.circle.fill" : "record.circle")
+//                    }
+//                    .buttonStyle(.borderedProminent)
+//                    .tint(recorder.isRecording ? .red : .accentColor)
+//                    .disabled(!recorder.permissionGranted)
+//                    
+//                    if let url = recorder.lastRecordingURL, !recorder.isRecording {
+//                        ShareLink(item: url) {
+//                            Label("Share", systemImage: "square.and.arrow.up")
+//                        }
+//                    }
+                    
+                    
 //                    Button("Open Whiteboard") {      // ← add this
 //                        openWindow(id: "personal-panel")
 //                    }
