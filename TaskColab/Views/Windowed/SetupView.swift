@@ -161,7 +161,7 @@ private extension String {
 
 #Preview {
     SetupView { user, ip, port in
-        print("User:", user, "IP:", ip, "Port:", port)
+//        print("User:", user, "IP:", ip, "Port:", port)
     }
     .frame(width: 800, height: 500)
 }

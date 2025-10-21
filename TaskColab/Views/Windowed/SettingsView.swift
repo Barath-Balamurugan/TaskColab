@@ -162,7 +162,7 @@ private extension String {
 
 #Preview {
     SettingsView { user, ip, port in
-        print("User:", user, "IP:", ip, "Port:", port)
+//        print("User:", user, "IP:", ip, "Port:", port)
     }
     .frame(width: 800, height: 500)
 }

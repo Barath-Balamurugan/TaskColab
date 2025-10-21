@@ -62,10 +62,12 @@ struct ContentView: View {
                                 // Close first, then flip the flag
                                 await closeSpace()
                                 appModel.isImmersed = false
+                                dismissWindow(id: "personal-panel")
                             } else {
                                 // Open first, then flip the flag
                                 await openSpace()
                                 appModel.isImmersed = true
+                                openWindow(id: "personal-panel")
                             }
                         }
                     } label: {
@@ -79,10 +81,10 @@ struct ContentView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     
-                    Button("Open Whiteboard") {      // ← add this
-                        openWindow(id: "personal-panel")
-                    }
-                    .buttonStyle(.borderedProminent)
+//                    Button("Open Whiteboard") {      // ← add this
+//                        openWindow(id: "personal-panel")
+//                    }
+//                    .buttonStyle(.borderedProminent)
                     
                     SharePlayButton("SharePlay", activity: ColabGroupActivity())
                         .padding(.vertical, 20)
@@ -92,7 +94,9 @@ struct ContentView: View {
             }
             .padding()
             .onDisappear {
+                if !appModel.isImmersed {
                     dismissWindow(id: "personal-panel")
+                }
             }
             .sheet(isPresented: $showWhiteboard) {   // ← add this
                 WhiteBoardView()
@@ -100,9 +104,9 @@ struct ContentView: View {
                     .environmentObject(wbStore)
             }
             .onChange(of: sharePlayManager.isSharing) { _, isSharing in
-                if isSharing {
-                    openWindow(id: "personal-panel")
-                }
+//                if isSharing {
+//                    openWindow(id: "personal-panel")
+//                }
             }
             .navigationTitle("")
             .toolbar {
@@ -129,6 +133,13 @@ struct ContentView: View {
                     // tiny delay to ensure the stack is ready before pushing
                     try? await Task.sleep(nanoseconds: 150_000_000)
                     path.append(Route.settings)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIScene.didDisconnectNotification)) { note in
+                Task{
+                    dismissWindow(id: "personal-panel")
+                    await closeSpace()
+                    appModel.isImmersed = false
                 }
             }
         }
