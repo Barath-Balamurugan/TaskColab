@@ -70,6 +70,15 @@ struct SetupView: View {
         }
         .frame(maxWidth: 600)
         .padding(32)
+        .onAppear {
+            // copy from @AppStorage into appModel at launch
+            if appModel.userID != userId || appModel.ipAddress != ipAddress ||
+               appModel.portNumber != UInt16(Int(portString) ?? 0) {
+                appModel.userID = userId
+                appModel.ipAddress = ipAddress
+                if let p = Int(portString) { appModel.portNumber = UInt16(p) }
+            }
+        }
     }
 
     // MARK: - Validation

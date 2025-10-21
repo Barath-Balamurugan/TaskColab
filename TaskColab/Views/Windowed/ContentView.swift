@@ -17,6 +17,7 @@ struct ContentView: View {
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
     @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
     @EnvironmentObject private var sharePlayManager: SharePlayManager
     
     @StateObject private var wbStore = WhiteboardStore()
@@ -90,6 +91,9 @@ struct ContentView: View {
                 Spacer()
             }
             .padding()
+            .onDisappear {
+                    dismissWindow(id: "personal-panel")
+            }
             .sheet(isPresented: $showWhiteboard) {   // ← add this
                 WhiteBoardView()
                     .presentationDetents([.medium, .large])

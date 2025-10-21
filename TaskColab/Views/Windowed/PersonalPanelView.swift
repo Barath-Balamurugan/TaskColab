@@ -3,7 +3,9 @@ import SwiftUI
 struct PersonalPanelView: View {
     @Environment(AppModel.self) private var appModel
     @EnvironmentObject private var sharePlayManager: SharePlayManager
-
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    
     @State private var showDiagnostics = false
     @State private var localLineWidth: Double = 6
 
