@@ -69,8 +69,12 @@ struct ImmersiveView: View {
 //                            print("Device Tranform: \(deviceTransform)")
 //                            print("---")
                             sendPosition(deviceTransform.columns.3.xyz)
-                            let euler_angle = yawPitchRoll(from: rot_q)
-//                            sendOrientation(euler_angle)
+                            
+                            let forward = -SIMD3<Float>(deviceTransform.columns.2.x, deviceTransform.columns.2.y, deviceTransform.columns.2.z)
+                            let headingDeg = wrap360( atan2(-forward.x, -forward.z) * 180 / .pi )
+                            print(SIMD3<Float>(headingDeg, 0, 0))
+//                            let euler_angle = yawPitchRoll(from: rot_q)
+                            sendOrientation(SIMD3<Float>(0, headingDeg, 0))
                         }
                     }
                     try await Task.sleep(nanoseconds: 33_000_000) // ~30 fps
@@ -92,12 +96,17 @@ struct ImmersiveView: View {
     func sendOrientation(_ rot: SIMD3<Float>){
 //        let angles: [Float] = [rot_q.imag.x, rot_q.imag.y, rot_q.imag.z, rot_q.real]
         oscManager.send(
-            .message("/device/rotation", values: [(-rot.y * 180.0 / .pi), (-rot.x * 180.0 / .pi), (rot.z * 180.0 / .pi)]),
+            .message("/device/rotation", values: [(rot.x), (rot.y), (rot.z)]),
             to: "\(appModel.ipAddress)", // destination IP address or hostname
             port: appModel.portNumber // standard OSC port but can be changed
         )
 //        print("Sent Orientation OSC message")
     }
+}
+
+func wrap360(_ d: Float) -> Float {
+    let m = fmodf(d, 360)
+    return m < 0 ? m + 360 : m
 }
 
 func yawPitchRoll(from qIn: simd_quatf) -> SIMD3<Float> {
@@ -116,9 +125,13 @@ func yawPitchRoll(from qIn: simd_quatf) -> SIMD3<Float> {
     let sinr = 2*(w*z - x*y)
     let cosr = 1 - 2*(z*z + y*y)
     let roll = atan2(sinr, cosr)
+    
+//    print(yaw, pitch, roll)
 
     return SIMD3<Float>(yaw, pitch, roll)
+//    return SIMD3<Float>(yaw, 0, 0)
 }
+
 
 extension SIMD4<Float> {
     var xyz: SIMD3<Float> {
