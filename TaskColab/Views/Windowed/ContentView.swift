@@ -28,6 +28,11 @@ struct ContentView: View {
     @AppStorage("hasCompletedSetup") private var hasCompletedSetup = false
     @State private var path = NavigationPath()
     
+    private var selectedTask: MissionTask {
+        TaskMatrix.task(for: appModel.selectedDay, userID: appModel.userID)
+        // If userID is an Int, just do: String(appModel.userID)
+    }
+    
     var body: some View {
         NavigationStack(path: $path) {
             VStack() {
@@ -37,6 +42,9 @@ struct ContentView: View {
                     .fontWeight(.heavy)
                     .foregroundColor(.primary)
                 
+                Spacer()
+                Spacer()
+                Spacer()
                 Spacer()
                 
                 Section() {
@@ -54,6 +62,15 @@ struct ContentView: View {
                 }
                 
                 Spacer()
+                Spacer()
+                Spacer()
+                Spacer()
+                Spacer()
+                
+                ScrollView {
+                    TaskCardView(task: selectedTask)
+                        .padding(.vertical, 8)
+                }
                 
                 HStack(spacing: 18) {
                     Button {
