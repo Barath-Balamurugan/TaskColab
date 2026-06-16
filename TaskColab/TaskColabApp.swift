@@ -20,6 +20,7 @@ struct TaskColabApp: App {
                 .environment(appModel)
                 .environmentObject(sharePlayManager)
         }
+        .defaultSize(width: 980, height: 620)
         .windowResizability(.contentSize)
 
         ImmersiveSpace(id: appModel.immersiveSpaceID) {

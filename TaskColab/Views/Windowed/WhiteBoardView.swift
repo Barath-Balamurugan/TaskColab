@@ -88,10 +88,18 @@ struct WhiteBoardView: View {
                 .overlay(
                     GeometryReader { geo in
                         Color.clear
-                            .onAppear { canvasSize = geo.size }
+                            .onAppear {
+                                canvasSize = geo.size
+                                if geo.size != .zero {
+                                    sendWhiteboardPose()
+                                }
+                            }
                             .onChange(of: geo.size) { newSize in
                                 let wasZero = (canvasSize == .zero)
                                 canvasSize = newSize
+                                if newSize != .zero {
+                                    sendWhiteboardPose()
+                                }
                                 if wasZero, newSize != .zero {
                                     // Rehydrate any pending normalized points once size is known
                                     for (id, pts) in pendingNormalized {
@@ -474,6 +482,18 @@ struct WhiteBoardView: View {
         )
     }
 
+    private var drawableBoardSizeMeters: CGSize {
+        guard canvasSize.width > 0, canvasSize.height > 0 else {
+            return boardSizeMeters
+        }
+
+        let metersPerPoint = boardSizeMeters.width / canvasSize.width
+        return CGSize(
+            width: boardSizeMeters.width,
+            height: canvasSize.height * metersPerPoint
+        )
+    }
+
     private func sendWhiteboardPose() {
         let position = SIMD3<Float>(
             boardWorldTransform.columns.3.x,
@@ -482,12 +502,13 @@ struct WhiteBoardView: View {
         )
         let oscPosition = appModel.oscPosition(fromRealityKit: position)
         let oscRotation = appModel.oscRotationDegrees(fromRealityKit: .zero)
+        let drawableSize = drawableBoardSizeMeters
         oscSend(
             "/whiteboard/pose",
             [
                 oscPosition.x, oscPosition.y, oscPosition.z,
                 oscRotation.x, oscRotation.y, oscRotation.z,
-                Float(boardSizeMeters.width), Float(boardSizeMeters.height)
+                Float(drawableSize.width), Float(drawableSize.height)
             ]
         )
     }
@@ -620,8 +641,9 @@ struct WhiteBoardView: View {
         let u = Float(canvasPoint.x / canvasSize.width)   // 0..1
         let v = Float(canvasPoint.y / canvasSize.height)  // 0..1
 
-        let halfW = Float(boardSizeMeters.width)  * 0.5
-        let halfH = Float(boardSizeMeters.height) * 0.5
+        let drawableSize = drawableBoardSizeMeters
+        let halfW = Float(drawableSize.width)  * 0.5
+        let halfH = Float(drawableSize.height) * 0.5
 
         // Map (u,v) to local meters on the plane (centered, Y up)
         let xLocal = (u - 0.5) * (2 * halfW)

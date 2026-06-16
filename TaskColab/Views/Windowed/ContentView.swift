@@ -7,6 +7,7 @@
 
 import SwiftUI
 import RealityKit
+import UIKit
 
 enum Route: Hashable {
     case settings
@@ -24,6 +25,7 @@ struct ContentView: View {
     
     @AppStorage("hasCompletedSetup") private var hasCompletedSetup = false
     @State private var path = NavigationPath()
+    @State private var windowScene: UIWindowScene?
     
     var body: some View {
         NavigationStack(path: $path) {
@@ -32,6 +34,14 @@ struct ContentView: View {
             .frame(
                 width: appModel.isWhiteboardVisible ? 420 : 980,
                 height: appModel.isWhiteboardVisible ? 150 : 620
+            )
+            .background(
+                WindowSceneReader { scene in
+                    if windowScene !== scene {
+                        windowScene = scene
+                        requestContentWindowSize(isWhiteboardVisible: appModel.isWhiteboardVisible)
+                    }
+                }
             )
             .onDisappear {
                 if !appModel.isImmersed {
@@ -73,6 +83,9 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIScene.didDisconnectNotification)) { note in
+                guard let disconnectedScene = note.object as? UIScene,
+                      disconnectedScene === windowScene else { return }
+                guard !appModel.isWhiteboardVisible else { return }
                 Task{
                     dismissWindow(id: "personal-panel")
                     await closeSpace()
@@ -80,6 +93,9 @@ struct ContentView: View {
                     appModel.isWhiteboardVisible = false
                     await sharePlayManager.sendImmersivePresence(userID: appModel.userID, isImmersed: false)
                 }
+            }
+            .onChange(of: appModel.isWhiteboardVisible) { _, isVisible in
+                requestContentWindowSize(isWhiteboardVisible: isVisible)
             }
         }
     }
@@ -94,19 +110,21 @@ struct ContentView: View {
     }
 
     private var mainContent: some View {
-        VStack {
+        VStack(spacing: 0) {
             Text("Moon Reader")
                 .font(.extraLargeTitle)
                 .fontWeight(.heavy)
                 .foregroundColor(.primary)
+                .padding(.top, 8)
 
-            Spacer()
-            Spacer()
-            Spacer()
-            Spacer()
+            Spacer(minLength: 26)
+
+            ImmersiveCountdownView()
+
+            Spacer(minLength: 24)
 
             Section {
-                HStack(spacing: 100) {
+                HStack(spacing: 62) {
                     ForEach(Day.allCases) { day in
                         RadioButton(
                             isSelected: appModel.selectedDay == day,
@@ -115,15 +133,10 @@ struct ContentView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                .frame(maxWidth: 780)
             }
 
-            Spacer()
-            Spacer()
-            Spacer()
-            Spacer()
-            Spacer()
-
-            ImmersiveCountdownView()
+            Spacer(minLength: 34)
 
             HStack(spacing: 18) {
                 Button {
@@ -162,8 +175,21 @@ struct ContentView: View {
                 SharePlayButton("SharePlay", activity: ColabGroupActivity())
                     .padding(.vertical, 20)
             }
-
-            Spacer()
+            .frame(maxWidth: 860)
+            .padding(.bottom, 10)
+        }
+        .padding(.horizontal, 52)
+        .padding(.vertical, 28)
+        .overlay(alignment: .topLeading) {
+            Text("v5.0")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.leading, 20)
+                .padding(.top, 18)
         }
     }
 
@@ -174,7 +200,7 @@ struct ContentView: View {
 
             HStack(spacing: 12) {
                 Button {
-                    appModel.isWhiteboardVisible = false
+                    closeWhiteboard()
                 } label: {
                     Label("Close Whiteboard", systemImage: "xmark.circle.fill")
                 }
@@ -208,13 +234,40 @@ struct ContentView: View {
     }
 
     private func toggleWhiteboard() async {
+        if appModel.isWhiteboardVisible {
+            closeWhiteboard()
+            return
+        }
+
         if !appModel.isImmersed {
             await openSpace()
             appModel.isImmersed = true
             await sharePlayManager.sendImmersivePresence(userID: appModel.userID, isImmersed: true)
             openWindow(id: "personal-panel")
         }
-        appModel.isWhiteboardVisible.toggle()
+
+        appModel.isWhiteboardVisible = true
+    }
+
+    private func closeWhiteboard() {
+        appModel.isWhiteboardVisible = false
+    }
+
+    private func requestContentWindowSize(isWhiteboardVisible: Bool) {
+        guard let windowScene else { return }
+        let size = CGSize(
+            width: isWhiteboardVisible ? 420 : 980,
+            height: isWhiteboardVisible ? 150 : 620
+        )
+        let preferences = UIWindowScene.GeometryPreferences.Vision(
+            size: size,
+            minimumSize: size,
+            maximumSize: size,
+            resizingRestrictions: .uniform
+        )
+        windowScene.requestGeometryUpdate(preferences) { error in
+            print("Window resize failed: \(error.localizedDescription)")
+        }
     }
     
     private func timeString(_ t: TimeInterval) -> String {
@@ -275,6 +328,43 @@ struct ImmersiveCountdownView: View {
         let mm = s / 60
         let ss = s % 60
         return String(format: "%02d:%02d", mm, ss)
+    }
+}
+
+private struct WindowSceneReader: UIViewRepresentable {
+    let onSceneChange: (UIWindowScene?) -> Void
+
+    func makeUIView(context: Context) -> SceneReadingView {
+        SceneReadingView(onSceneChange: onSceneChange)
+    }
+
+    func updateUIView(_ uiView: SceneReadingView, context: Context) {
+        uiView.onSceneChange = onSceneChange
+        uiView.reportScene()
+    }
+
+    final class SceneReadingView: UIView {
+        var onSceneChange: (UIWindowScene?) -> Void
+
+        init(onSceneChange: @escaping (UIWindowScene?) -> Void) {
+            self.onSceneChange = onSceneChange
+            super.init(frame: .zero)
+            isHidden = true
+            isUserInteractionEnabled = false
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            reportScene()
+        }
+
+        func reportScene() {
+            onSceneChange(window?.windowScene)
+        }
     }
 }
 
