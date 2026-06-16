@@ -9,11 +9,23 @@ import Foundation
 import GroupActivities
 import Combine
 
+struct ImmersivePresenceMessage: Codable, Sendable {
+    let userID: String
+    let isImmersed: Bool
+}
+
+struct MissionTimerStartMessage: Codable, Sendable {
+    let startDate: Date
+}
+
 @MainActor
 final class SharePlayManager: ObservableObject {
     @Published private var session: GroupSession<ColabGroupActivity>?
     @Published private var participants: [Participant] = []
     @Published var isSharing: Bool = false
+    @Published var immersiveParticipantIDs: Set<String> = []
+    @Published var missionStartDate: Date?
+    let missionDuration: TimeInterval = 40 * 60
     
     private var messenger: GroupSessionMessenger?
     
@@ -42,6 +54,14 @@ final class SharePlayManager: ObservableObject {
             Task { [weak self] in
                 await self?.receiveWhiteBoard()
             }
+
+            Task { [weak self] in
+                await self?.receiveImmersivePresence()
+            }
+
+            Task { [weak self] in
+                await self?.receiveMissionTimerStart()
+            }
             
             await session.join()
             
@@ -54,6 +74,8 @@ final class SharePlayManager: ObservableObject {
                             self?.isSharing = false
                             self?.session = nil
                             self?.messenger = nil
+                            self?.immersiveParticipantIDs.removeAll()
+                            self?.missionStartDate = nil
                         default: break
                         }
                     }
@@ -80,6 +102,66 @@ final class SharePlayManager: ObservableObject {
         for await (message, _) in messenger.messages(of: WBMessage.self){
             await MainActor.run { whiteboardEvents.send(message)}
         }
+    }
+
+    func sendImmersivePresence(userID: String, isImmersed: Bool) async {
+        let id = normalizedPresenceID(userID)
+        applyImmersivePresence(ImmersivePresenceMessage(userID: id, isImmersed: isImmersed))
+
+        guard let messenger else { return }
+        do {
+            try await messenger.send(ImmersivePresenceMessage(userID: id, isImmersed: isImmersed))
+        } catch {
+            print("Immersive presence send failed: \(error)")
+        }
+    }
+
+    private func receiveImmersivePresence() async {
+        guard let messenger else { return }
+        for await (message, _) in messenger.messages(of: ImmersivePresenceMessage.self) {
+            await MainActor.run { self.applyImmersivePresence(message) }
+        }
+    }
+
+    private func receiveMissionTimerStart() async {
+        guard let messenger else { return }
+        for await (message, _) in messenger.messages(of: MissionTimerStartMessage.self) {
+            await MainActor.run {
+                if let current = self.missionStartDate {
+                    self.missionStartDate = min(current, message.startDate)
+                } else {
+                    self.missionStartDate = message.startDate
+                }
+            }
+        }
+    }
+
+    private func applyImmersivePresence(_ message: ImmersivePresenceMessage) {
+        if message.isImmersed {
+            immersiveParticipantIDs.insert(message.userID)
+        } else {
+            immersiveParticipantIDs.remove(message.userID)
+        }
+
+        if immersiveParticipantIDs.count >= 3, missionStartDate == nil {
+            let startDate = Date()
+            missionStartDate = startDate
+            Task { await sendMissionTimerStart(startDate) }
+        }
+    }
+
+    private func sendMissionTimerStart(_ startDate: Date) async {
+        guard let messenger else { return }
+        do {
+            try await messenger.send(MissionTimerStartMessage(startDate: startDate))
+        } catch {
+            print("Mission timer start send failed: \(error)")
+        }
+    }
+
+    private func normalizedPresenceID(_ userID: String) -> String {
+        let trimmed = userID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "local" : trimmed
     }
     
     func send(_ msg: ParticipantData) async {

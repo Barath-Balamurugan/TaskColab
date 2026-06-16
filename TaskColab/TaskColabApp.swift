@@ -20,10 +20,12 @@ struct TaskColabApp: App {
                 .environment(appModel)
                 .environmentObject(sharePlayManager)
         }
+        .windowResizability(.contentSize)
 
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveView(oscManager: oscManager)
                 .environment(appModel)
+                .environmentObject(sharePlayManager)
         }
         .immersionStyle(selection: .constant(.mixed), in: .mixed)
         
@@ -32,6 +34,14 @@ struct TaskColabApp: App {
                 .environment(appModel)
                 .environmentObject(sharePlayManager)
         }
-        .defaultSize(width: 600, height: 500)
+        .defaultSize(width: 820, height: 860)
+        .defaultWindowPlacement { _, context in
+            if let mainWindow = context.windows.first(where: { $0.id == "content-view" }) {
+                WindowPlacement(.trailing(mainWindow), width: 820, height: 860)
+            } else {
+                WindowPlacement(.utilityPanel, width: 820, height: 860)
+            }
+        }
+        .windowResizability(.contentSize)
      }
 }

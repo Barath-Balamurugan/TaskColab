@@ -32,41 +32,41 @@ struct ImageMatrix {
     // Map: Day -> (userID string -> asset name)
     static let table: [Day: [String: String]] = [
         .day1: [
-            "3001": "SolarIllumination",
-            "3002": "EarthIllumination",
-            "3003": "GeologicalUnits",
-            "default": "SiteRanking" // optional per-day fallback
+            "3001": "solar_map_latest",
+            "3002": "earth_map_latest",
+            "3003": "topography_map_latest",
+            "default": "template_map_latest" // optional per-day fallback
         ],
         .day2: [
-            "3001": "EarthIllumination",
-            "3002": "SolarIllumination",
-            "3003": "SiteRanking",
-            "default": "SiteRanking"
+            "3001": "earth_map_latest",
+            "3002": "solar_map_latest",
+            "3003": "template_map_latest",
+            "default": "template_map_latest"
         ],
         .day3: [
-            "3001": "GeologicalUnits",
-            "3002": "SiteRanking",
-            "3003": "SolarIllumination",
-            "default": "SiteRanking"
+            "3001": "topography_map_latest",
+            "3002": "template_map_latest",
+            "3003": "solar_map_latest",
+            "default": "template_map_latest"
         ],
         .day4: [
-            "3001": "SiteRanking",
-            "3002": "GeologicalUnits",
-            "3003": "EarthIllumination",
-            "default": "SiteRanking"
+            "3001": "template_map_latest",
+            "3002": "topography_map_latest",
+            "3003": "earth_map_latest",
+            "default": "template_map_latest"
         ],
         .day5: [
-            "3001": "SolarIllumination",
-            "3002": "GeologicalUnits",
-            "3003": "EarthIllumination",
-            "default": "SiteRanking"
+            "3001": "solar_map_latest",
+            "3002": "topography_map_latest",
+            "3003": "earth_map_latest",
+            "default": "template_map_latest"
         ]
     ]
 
     static func assetName(for day: Day, userID: String) -> String {
         if let exact = table[day]?[userID] { return exact }
         if let fallback = table[day]?["default"] { return fallback }
-        return "SiteRanking" // global fallback if you want one
+        return "template_map_latest" // global fallback if you want one
     }
 }
 
@@ -238,4 +238,3 @@ struct TaskMatrix {
         )
     }
 }
-

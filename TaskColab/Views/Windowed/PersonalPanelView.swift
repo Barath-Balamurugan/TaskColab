@@ -9,6 +9,10 @@ struct PersonalPanelView: View {
     @State private var showDiagnostics = false
     @State private var localLineWidth: Double = 6
 
+    private var selectedTask: MissionTask {
+        TaskMatrix.task(for: appModel.selectedDay, userID: appModel.userID)
+    }
+
     var body: some View {
         VStack(spacing: 16) {
             HStack {
@@ -21,11 +25,20 @@ struct PersonalPanelView: View {
             // --- Image chosen by (selectedDay, userID) ---
             let asset = ImageMatrix.assetName(for: appModel.selectedDay, userID: appModel.userID)
 
-            Image(asset)
-                .resizable()
-                .scaledToFit()
-                .cornerRadius(16)
-                .padding(15)
+            ScrollView {
+                VStack(spacing: 16) {
+                    Image(asset)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 430)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    TaskCardView(task: selectedTask)
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+            }
+            .frame(maxWidth: .infinity)
 
             // Example: quick local info
             if showDiagnostics {
@@ -40,14 +53,12 @@ struct PersonalPanelView: View {
                 .padding(.top, 4)
             }
 
-            Spacer()
-
             HStack {
                 Toggle("Show Diagnostics", isOn: $showDiagnostics)
                 Spacer()
             }
         }
         .padding(25)
+        .frame(width: 820, height: 860)
     }
 }
-

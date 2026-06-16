@@ -2,18 +2,14 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) var appModel
-    @AppStorage("setup.userId") private var userId: String = ""
-    @AppStorage("setup.ipAddress") private var ipAddress: String = ""
-    @AppStorage("setup.port") private var portString: String = ""
-    @StateObject private var sharePlayManager = SharePlayManager()
-    
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismissWindow) private var dismissWindow
-    
-    @State private var goNext = false
+    @State private var userId: String = ""
+    @State private var ipAddress: String = ""
+    @State private var portString: String = "9000"
+    @State private var slimeVRPortString: String = "9001"
+    @State private var didLoadDraft = false
     
     @FocusState private var focusedField: Field?
-    enum Field: Hashable { case userId, ip, port }
+    enum Field: Hashable { case userId, ip, port, slimeVRPort }
     
     @AppStorage("hasCompletedSetup") private var hasCompletedSetup = false
     @Environment(\.dismiss) private var dismiss
@@ -40,7 +36,7 @@ struct SettingsView: View {
                 }
                 .validationMessage(userIdValid ? nil : "Please enter a four digit number.")
                 
-                FieldRow(title: "IP Address") {
+                FieldRow(title: "OSC IP") {
                     TextField("e.g. 192.168.1.42", text: $ipAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -49,18 +45,29 @@ struct SettingsView: View {
                         .focused($focusedField, equals: .ip)
                         .onSubmit { focusedField = .port }
                 }
-                .validationMessage(ipValid ? nil : "Enter a valid IPv4 address.")
+                .validationMessage(unityIPValid ? nil : "Enter a valid IPv4 address.")
                 
-                FieldRow(title: "Port Number") {
-                    TextField("e.g. 3333", text: $portString)
+                FieldRow(title: "Unity Port") {
+                    TextField("e.g. 9000", text: $portString)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.numberPad)
+                        .submitLabel(.next)
+                        .focused($focusedField, equals: .port)
+                        .onSubmit { focusedField = .slimeVRPort }
+                }
+                .validationMessage(unityPortValid ? nil : "Port must be 1-65535.")
+
+                FieldRow(title: "SlimeVR Port") {
+                    TextField("e.g. 9001", text: $slimeVRPortString)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.numberPad)
                         .submitLabel(.done)
-                        .focused($focusedField, equals: .port)
+                        .focused($focusedField, equals: .slimeVRPort)
                         .onSubmit { attemptDone() }
                 }
-                .validationMessage(portValid ? nil : "Port must be 1–65535.")
+                .validationMessage(slimeVRPortValid ? nil : "Port must be 1-65535.")
             }
             .padding(24)
             .glassBackgroundEffect()
@@ -77,6 +84,7 @@ struct SettingsView: View {
         .frame(maxWidth: 600)
         .padding(32)
         .navigationTitle("Settings")
+        .onAppear { loadDraftIfNeeded() }
     }
 
     // MARK: - Validation
@@ -85,31 +93,66 @@ struct SettingsView: View {
         !userId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var ipValid: Bool {
+    private var unityIPValid: Bool {
         // Strict IPv4 validation 0-255 per octet
         ipAddress.matches(#"^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$"#)
     }
 
-    private var portValid: Bool {
+    private var unityPortValid: Bool {
         if let p = Int(portString), (1...65535).contains(p) { return true }
         return false
     }
 
-    private var formValid: Bool { userIdValid && ipValid && portValid }
+    private var slimeVRPortValid: Bool {
+        if let p = Int(slimeVRPortString), (1...65535).contains(p) { return true }
+        return false
+    }
+
+    private var formValid: Bool {
+        userIdValid && unityIPValid && unityPortValid && slimeVRPortValid
+    }
 
     // MARK: - Actions
 
     private func attemptDone() {
         guard formValid, let p = Int(portString) else { return }
         focusedField = nil
-        appModel.userID = userId
-        appModel.ipAddress = ipAddress
-        appModel.portNumber = UInt16(p)
+        syncModelIfPossible()
         
         onDone?(userId, ipAddress, p)
         
         hasCompletedSetup = true
         dismiss()
+    }
+
+    private func loadDraftIfNeeded() {
+        guard !didLoadDraft else { return }
+        userId = appModel.userID
+        ipAddress = appModel.ipAddress
+        portString = String(appModel.portNumber)
+        slimeVRPortString = String(appModel.slimeVRPortNumber)
+        didLoadDraft = true
+    }
+
+    private func syncModelIfPossible() {
+        var unityPort: UInt16?
+        if let p = Int(portString), (1...65535).contains(p) {
+            unityPort = UInt16(p)
+        }
+
+        var slimePort: UInt16?
+        if let p = Int(slimeVRPortString), (1...65535).contains(p) {
+            slimePort = UInt16(p)
+        }
+
+        appModel.updateSetup(
+            userID: userId,
+            unityIPAddress: ipAddress,
+            unityPort: unityPort,
+            outputMode: .slimeVR,
+            slimeVRIPAddress: ipAddress,
+            slimeVRPort: slimePort
+        )
     }
 }
 
@@ -166,4 +209,3 @@ private extension String {
     }
     .frame(width: 800, height: 500)
 }
-

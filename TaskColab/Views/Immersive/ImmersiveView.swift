@@ -15,15 +15,21 @@ internal import OSCKitCore
 struct ImmersiveView: View {
     
     @Environment(AppModel.self) private var appModel
+    @EnvironmentObject private var sharePlayManager: SharePlayManager
     @State var oscManager: OSCManager
     
     @State private var deviceTransform: simd_float4x4 = .init()
     @State private var cube: ModelEntity?
+    @StateObject private var wbStore = WhiteboardStore()
+    @State private var lastSlimeVRPoseLogDate = Date.distantPast
     
     @Environment(\.immersiveSpaceDisplacement) private var spaceDisplacement  // meters
 
+    private let whiteboardPosition = SIMD3<Float>(0, 1.2, 0.25)
+    private let whiteboardSizeMeters = CGSize(width: 1.2, height: 0.928)
+
     var body: some View {
-        RealityView{ content in
+        RealityView { content, attachments in
             let cubeEntity = ModelEntity(
                 mesh: .generateBox(size: 0.15),
                 materials: [SimpleMaterial(color: .blue, isMetallic: false)]
@@ -34,6 +40,12 @@ struct ImmersiveView: View {
             content.add(cubeEntity)
             
             cube = cubeEntity
+
+            if appModel.isWhiteboardVisible,
+               let whiteboard = attachments.entity(for: "immersive-whiteboard") {
+                whiteboard.setTransformMatrix(whiteboardWorldTransform, relativeTo: nil)
+                content.add(whiteboard)
+            }
             
             Task{
                 let session = ARKitSession()
@@ -68,39 +80,104 @@ struct ImmersiveView: View {
 //                            print("Distance to Cube: \(length(relativePos)) meters")
 //                            print("Device Tranform: \(deviceTransform)")
 //                            print("---")
-                            sendPosition(deviceTransform.columns.3.xyz)
-                            
-                            let forward = -SIMD3<Float>(deviceTransform.columns.2.x, deviceTransform.columns.2.y, deviceTransform.columns.2.z)
-                            let headingDeg = wrap360( atan2(-forward.x, -forward.z) * 180 / .pi )
-                            print(SIMD3<Float>(headingDeg, 0, 0))
-//                            let euler_angle = yawPitchRoll(from: rot_q)
-                            sendOrientation(SIMD3<Float>(0, headingDeg, 0))
+                            let rotationRadians = pitchYawRoll(from: rot_q)
+                            sendHeadPose(position: deviceTransform.columns.3.xyz, rotationRadians: rotationRadians)
                         }
                     }
                     try await Task.sleep(nanoseconds: 33_000_000) // ~30 fps
                 }
             }
+        } update: { content, attachments in
+            guard let whiteboard = attachments.entity(for: "immersive-whiteboard") else { return }
+            if appModel.isWhiteboardVisible {
+                whiteboard.setTransformMatrix(whiteboardWorldTransform, relativeTo: nil)
+                if whiteboard.parent == nil {
+                    content.add(whiteboard)
+                }
+            } else {
+                whiteboard.removeFromParent()
+            }
+        } attachments: {
+            Attachment(id: "immersive-whiteboard") {
+                WhiteBoardView(
+                    boardWorldTransform: whiteboardWorldTransform,
+                    boardSizeMeters: whiteboardSizeMeters,
+                    onClose: {
+                        appModel.isWhiteboardVisible = false
+                    }
+                )
+                .frame(width: 1200, height: 1030)
+                .environment(appModel)
+                .environmentObject(sharePlayManager)
+                .environmentObject(wbStore)
+            }
+        }
+        .onAppear {
+            Task {
+                await sharePlayManager.sendImmersivePresence(userID: appModel.userID, isImmersed: true)
+            }
+        }
+        .onDisappear {
+            Task {
+                await sharePlayManager.sendImmersivePresence(userID: appModel.userID, isImmersed: false)
+            }
         }
     }
     
-    func sendPosition(_ pos: SIMD3<Float>) {
+    private var whiteboardWorldTransform: simd_float4x4 {
+        var transform = matrix_identity_float4x4
+        transform.columns.3 = SIMD4<Float>(whiteboardPosition.x, whiteboardPosition.y, whiteboardPosition.z, 1)
+        return transform
+    }
+
+    func sendHeadPose(position: SIMD3<Float>, rotationRadians: SIMD3<Float>) {
+        sendSlimeVRPose(position: position, rotationRadians: rotationRadians)
+    }
+
+    func sendUnityPosition(_ pos: SIMD3<Float>) {
+        let oscPosition = appModel.oscPosition(fromRealityKit: pos)
         oscManager.send(
-            .message("/device/position", values: [pos.x, pos.y, -pos.z]),
+            .message("/device/position", values: [oscPosition.x, oscPosition.y, oscPosition.z]),
             to: "\(appModel.ipAddress)", // destination IP address or hostname
             port: appModel.portNumber // standard OSC port but can be changed
         )
-        print(appModel.ipAddress)
 //        print("Sent position OSC message")
     }
     
-    func sendOrientation(_ rot: SIMD3<Float>){
+    func sendUnityOrientation(_ rot: SIMD3<Float>){
+        let oscRotation = appModel.oscRotationDegrees(fromRealityKit: rot)
 //        let angles: [Float] = [rot_q.imag.x, rot_q.imag.y, rot_q.imag.z, rot_q.real]
         oscManager.send(
-            .message("/device/rotation", values: [(rot.x), (rot.y), (rot.z)]),
+            .message("/device/rotation", values: [oscRotation.x, oscRotation.y, oscRotation.z]),
             to: "\(appModel.ipAddress)", // destination IP address or hostname
             port: appModel.portNumber // standard OSC port but can be changed
         )
 //        print("Sent Orientation OSC message")
+    }
+
+    func sendSlimeVRPose(position: SIMD3<Float>, rotationRadians: SIMD3<Float>) {
+        let oscPosition = appModel.oscPosition(fromRealityKit: position)
+        let oscRotation = appModel.oscRotationDegrees(fromRealityKit: rotationRadians)
+        let pitch = -oscRotation.x
+        let yaw = -oscRotation.y
+        let roll = oscRotation.z
+
+        oscManager.send(
+            .message(
+                "/tracking/vrsystem/head/pose",
+                values: [oscPosition.x, oscPosition.y, oscPosition.z, pitch, yaw, roll]
+            ),
+            to: appModel.ipAddress,
+            port: appModel.slimeVRPortNumber
+        )
+
+        let now = Date()
+        if now.timeIntervalSince(lastSlimeVRPoseLogDate) >= 1 {
+            lastSlimeVRPoseLogDate = now
+            print("/tracking/vrsystem/head/pose -> \(appModel.ipAddress):\(appModel.slimeVRPortNumber)")
+            print("position: \(oscPosition.x) \(oscPosition.y) \(oscPosition.z)")
+            print("rotation: \(pitch) \(yaw) \(roll)")
+        }
     }
 }
 
@@ -109,7 +186,7 @@ func wrap360(_ d: Float) -> Float {
     return m < 0 ? m + 360 : m
 }
 
-func yawPitchRoll(from qIn: simd_quatf) -> SIMD3<Float> {
+func pitchYawRoll(from qIn: simd_quatf) -> SIMD3<Float> {
     let q = simd_normalize(qIn)
     let x = q.imag.x, y = q.imag.y, z = q.imag.z, w = q.real
 
@@ -128,7 +205,7 @@ func yawPitchRoll(from qIn: simd_quatf) -> SIMD3<Float> {
     
 //    print(yaw, pitch, roll)
 
-    return SIMD3<Float>(yaw, pitch, roll)
+    return SIMD3<Float>(pitch, yaw, roll)
 //    return SIMD3<Float>(yaw, 0, 0)
 }
 

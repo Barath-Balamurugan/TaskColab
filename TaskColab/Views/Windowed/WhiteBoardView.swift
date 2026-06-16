@@ -33,6 +33,10 @@ private extension SIMD4<Float> { var points_3d: SIMD3<Float> { .init(x, y, z) } 
 // MARK: - WhiteBoardView
 
 struct WhiteBoardView: View {
+    var boardWorldTransform: simd_float4x4 = matrix_identity_float4x4
+    var boardSizeMeters: CGSize = .init(width: 1.0, height: 0.6)
+    var onClose: (() -> Void)? = nil
+
     @EnvironmentObject private var wbStore: WhiteboardStore
     @Environment(AppModel.self) private var appModel
     @EnvironmentObject private var sharePlayManager: SharePlayManager
@@ -45,10 +49,6 @@ struct WhiteBoardView: View {
     @State private var localStrokeID: UUID? = nil
     @State private var currentStroke: StrokeLocal?
     @State private var canvasSize: CGSize = .zero
-
-    // World mapping
-    @State private var boardWorldTransform: simd_float4x4 = matrix_identity_float4x4
-    @State private var boardSizeMeters: CGSize = .init(width: 1.0, height: 0.6)
 
     // Colors
     @State private var currentColorRGBA: SIMD4<Float> = .init(0,0,0,1)
@@ -73,7 +73,7 @@ struct WhiteBoardView: View {
         VStack(spacing: 12) {
             ZStack {
                 // Background image
-                Image("SolarIllumination")
+                Image("template_map_latest")
                     .resizable()
                     .scaledToFill()
                     .overlay(Color.white.opacity(0.06))
@@ -235,13 +235,20 @@ struct WhiteBoardView: View {
                     Label("Save", systemImage: "photo")
                 }
 
-                Button("Close") { dismiss() }
+                Button("Close") {
+                    if let onClose {
+                        onClose()
+                    } else {
+                        dismiss()
+                    }
+                }
                     .buttonStyle(.borderedProminent)
             }
         }
         .padding()
         .onAppear {
             updateRGBA(from: wbStore.currentColor)
+            sendWhiteboardPose()
         }
         // Ensure UI mutations are on main thread
         .onReceive(sharePlayManager.whiteboardEvents.receive(on: RunLoop.main)) { message in
@@ -306,7 +313,7 @@ struct WhiteBoardView: View {
     private func renderCurrentCGImage() -> CGImage? {
         guard canvasSize != .zero else { return nil }
         let content = WhiteboardSnapshotView(
-            backgroundName: "SolarIllumination",
+            backgroundName: "template_map_latest",
             size: canvasSize,
             strokes: wbStore.strokes,
             inProgress: wbStore.inProgress
@@ -467,13 +474,36 @@ struct WhiteBoardView: View {
         )
     }
 
+    private func sendWhiteboardPose() {
+        let position = SIMD3<Float>(
+            boardWorldTransform.columns.3.x,
+            boardWorldTransform.columns.3.y,
+            boardWorldTransform.columns.3.z
+        )
+        let oscPosition = appModel.oscPosition(fromRealityKit: position)
+        let oscRotation = appModel.oscRotationDegrees(fromRealityKit: .zero)
+        oscSend(
+            "/whiteboard/pose",
+            [
+                oscPosition.x, oscPosition.y, oscPosition.z,
+                oscRotation.x, oscRotation.y, oscRotation.z,
+                Float(boardSizeMeters.width), Float(boardSizeMeters.height)
+            ]
+        )
+    }
+
     private func sendWBBegin(id: UUID, width: CGFloat, color: SIMD4<Float>) {
         oscSend("/wb/begin", [id.uuidString, Float(width), color.x, color.y, color.z, color.w])
     }
 
     private func sendWBAppendWorld(id: UUID, worldPoints: [SIMD3<Float>]) {
         var args: [any OSCValue] = [id.uuidString]
-        for p in worldPoints { args.append(p.x); args.append(p.y); args.append(p.z) }
+        for p in worldPoints {
+            let oscPoint = appModel.oscPosition(fromRealityKit: p)
+            args.append(oscPoint.x)
+            args.append(oscPoint.y)
+            args.append(oscPoint.z)
+        }
         oscSend("/wb/append_world", args)
     }
 
