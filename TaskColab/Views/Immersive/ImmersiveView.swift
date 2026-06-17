@@ -188,25 +188,28 @@ func wrap360(_ d: Float) -> Float {
 
 func pitchYawRoll(from qIn: simd_quatf) -> SIMD3<Float> {
     let q = simd_normalize(qIn)
-    let x = q.imag.x, y = q.imag.y, z = q.imag.z, w = q.real
+    let m = simd_float3x3(q)
 
-    // pitch (X)
-    let sinp = 2*(w*x - y*z)
-    let pitch = abs(sinp) >= 1 ? copysign(.pi/2, sinp) : asin(sinp)
+    let m13 = m.columns.2.x
+    let m21 = m.columns.0.y
+    let m22 = m.columns.1.y
+    let m23 = m.columns.2.y
+    let m33 = m.columns.2.z
 
-    // yaw (Y)
-    let siny = 2*(w*y + z*x)
-    let yaw  = abs(siny) >= 1 ? copysign(.pi/2, siny) : asin(siny)
+    // Y-X-Z keeps headset yaw continuous through 180 degrees.
+    let pitch = asin(max(-1, min(1, -m23)))
+    let yaw: Float
+    let roll: Float
 
-    // roll (Z)
-    let sinr = 2*(w*z - x*y)
-    let cosr = 1 - 2*(z*z + y*y)
-    let roll = atan2(sinr, cosr)
-    
-//    print(yaw, pitch, roll)
+    if abs(m23) < 0.999_999 {
+        yaw = atan2(m13, m33)
+        roll = atan2(m21, m22)
+    } else {
+        yaw = atan2(-m.columns.0.z, m.columns.0.x)
+        roll = 0
+    }
 
     return SIMD3<Float>(pitch, yaw, roll)
-//    return SIMD3<Float>(yaw, 0, 0)
 }
 
 
