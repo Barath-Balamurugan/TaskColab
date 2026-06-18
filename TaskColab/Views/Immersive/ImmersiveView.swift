@@ -171,6 +171,8 @@ struct ImmersiveView: View {
                             updateJointSpheres(rightHandJointSpheres, from: hands.rightHand)
                             sendHandPointsToUnity(from: hands.leftHand, chirality: .left)
                             sendHandPointsToUnity(from: hands.rightHand, chirality: .right)
+                            sendSlimeVRWristPose(from: hands.leftHand, chirality: .left)
+                            sendSlimeVRWristPose(from: hands.rightHand, chirality: .right)
                         }
                     }
                     try await Task.sleep(nanoseconds: 33_000_000) // ~30 fps
@@ -268,6 +270,13 @@ struct ImmersiveView: View {
         _ jointName: HandSkeleton.JointName,
         from handAnchor: HandAnchor?
     ) -> SIMD3<Float>? {
+        jointTransform(jointName, from: handAnchor)?.columns.3.xyz
+    }
+
+    func jointTransform(
+        _ jointName: HandSkeleton.JointName,
+        from handAnchor: HandAnchor?
+    ) -> simd_float4x4? {
         guard let handAnchor,
               handAnchor.isTracked,
               let skeleton = handAnchor.handSkeleton else {
@@ -277,8 +286,7 @@ struct ImmersiveView: View {
         let joint = skeleton.joint(jointName)
         guard joint.isTracked else { return nil }
 
-        let originFromJointTransform = handAnchor.originFromAnchorTransform * joint.anchorFromJointTransform
-        return originFromJointTransform.columns.3.xyz
+        return handAnchor.originFromAnchorTransform * joint.anchorFromJointTransform
     }
 
     // Payload: user ID, then [tracked, x, y, z] for palm, five fingertips, and two forearm joints.
@@ -361,6 +369,35 @@ struct ImmersiveView: View {
             print("position: \(oscPosition.x) \(oscPosition.y) \(oscPosition.z)")
             print("rotation: \(pitch) \(yaw) \(roll)")
         }
+    }
+
+    func sendSlimeVRWristPose(
+        from handAnchor: HandAnchor?,
+        chirality: HandAnchor.Chirality
+    ) {
+        guard let wristTransform = jointTransform(.wrist, from: handAnchor) else { return }
+
+        let position = wristTransform.columns.3.xyz
+        let rotationRadians = pitchYawRoll(from: simd_quatf(wristTransform))
+        let oscPosition = appModel.oscPosition(fromRealityKit: position)
+        let oscRotation = appModel.oscRotationDegrees(fromRealityKit: rotationRadians)
+        let side = chirality == .left ? "left" : "right"
+
+        oscManager.send(
+            .message(
+                "/tracking/vrsystem/\(side)wrist/pose",
+                values: [
+                    oscPosition.x,
+                    oscPosition.y,
+                    oscPosition.z,
+                    -oscRotation.x,
+                    -oscRotation.y,
+                    oscRotation.z
+                ]
+            ),
+            to: appModel.ipAddress,
+            port: appModel.slimeVRPortNumber
+        )
     }
 }
 
