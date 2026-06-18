@@ -22,6 +22,8 @@ struct ImmersiveView: View {
     @State private var cube: ModelEntity?
     @State private var leftPalmSphere: ModelEntity?
     @State private var rightPalmSphere: ModelEntity?
+    @State private var leftHandJointSpheres: [HandSkeleton.JointName: ModelEntity] = [:]
+    @State private var rightHandJointSpheres: [HandSkeleton.JointName: ModelEntity] = [:]
     @StateObject private var wbStore = WhiteboardStore()
     @State private var lastSlimeVRPoseLogDate = Date.distantPast
     
@@ -30,6 +32,19 @@ struct ImmersiveView: View {
     private let whiteboardPosition = SIMD3<Float>(0, 1.2, 0.25)
     private let whiteboardSizeMeters = CGSize(width: 1.2, height: 0.928)
     private let palmSphereRadius: Float = 0.035
+    private let fingertipSphereRadius: Float = 0.012
+    private let forearmSphereRadius: Float = 0.02
+    private let fingertipJointNames: [HandSkeleton.JointName] = [
+        .thumbTip,
+        .indexFingerTip,
+        .middleFingerTip,
+        .ringFingerTip,
+        .littleFingerTip
+    ]
+    private let forearmJointNames: [HandSkeleton.JointName] = [
+        .forearmWrist,
+        .forearmArm
+    ]
 
     var body: some View {
         RealityView { content, attachments in
@@ -59,6 +74,34 @@ struct ImmersiveView: View {
             rightSphere.isEnabled = false
             content.add(rightSphere)
             rightPalmSphere = rightSphere
+
+            var leftJointMarkers: [HandSkeleton.JointName: ModelEntity] = [:]
+            var rightJointMarkers: [HandSkeleton.JointName: ModelEntity] = [:]
+
+            for jointName in fingertipJointNames + forearmJointNames {
+                let radius = fingertipJointNames.contains(jointName)
+                    ? fingertipSphereRadius
+                    : forearmSphereRadius
+
+                let leftMarker = ModelEntity(
+                    mesh: .generateSphere(radius: radius),
+                    materials: [SimpleMaterial(color: .green, isMetallic: false)]
+                )
+                leftMarker.isEnabled = false
+                content.add(leftMarker)
+                leftJointMarkers[jointName] = leftMarker
+
+                let rightMarker = ModelEntity(
+                    mesh: .generateSphere(radius: radius),
+                    materials: [SimpleMaterial(color: .orange, isMetallic: false)]
+                )
+                rightMarker.isEnabled = false
+                content.add(rightMarker)
+                rightJointMarkers[jointName] = rightMarker
+            }
+
+            leftHandJointSpheres = leftJointMarkers
+            rightHandJointSpheres = rightJointMarkers
 
             if appModel.isWhiteboardVisible,
                let whiteboard = attachments.entity(for: "immersive-whiteboard") {
@@ -124,6 +167,10 @@ struct ImmersiveView: View {
                             let hands = handTracking.handAnchors(at: timestamp)
                             updatePalmSphere(leftPalmSphere, from: hands.leftHand)
                             updatePalmSphere(rightPalmSphere, from: hands.rightHand)
+                            updateJointSpheres(leftHandJointSpheres, from: hands.leftHand)
+                            updateJointSpheres(rightHandJointSpheres, from: hands.rightHand)
+                            sendHandPointsToUnity(from: hands.leftHand, chirality: .left)
+                            sendHandPointsToUnity(from: hands.rightHand, chirality: .right)
                         }
                     }
                     try await Task.sleep(nanoseconds: 33_000_000) // ~30 fps
@@ -188,36 +235,86 @@ struct ImmersiveView: View {
         sphere.isEnabled = true
     }
 
+    func updateJointSpheres(
+        _ spheres: [HandSkeleton.JointName: ModelEntity],
+        from handAnchor: HandAnchor?
+    ) {
+        guard handAnchor?.isTracked == true else {
+            spheres.values.forEach { $0.isEnabled = false }
+            return
+        }
+
+        for (jointName, sphere) in spheres {
+            guard let position = jointPosition(jointName, from: handAnchor) else {
+                sphere.isEnabled = false
+                continue
+            }
+
+            sphere.position = position
+            sphere.isEnabled = true
+        }
+    }
+
     func estimatedPalmPosition(from handAnchor: HandAnchor?) -> SIMD3<Float>? {
+        guard let wristPosition = jointPosition(.wrist, from: handAnchor),
+              let middleKnucklePosition = jointPosition(.middleFingerKnuckle, from: handAnchor) else {
+            return nil
+        }
+
+        return (wristPosition + middleKnucklePosition) / 2
+    }
+
+    func jointPosition(
+        _ jointName: HandSkeleton.JointName,
+        from handAnchor: HandAnchor?
+    ) -> SIMD3<Float>? {
         guard let handAnchor,
               handAnchor.isTracked,
               let skeleton = handAnchor.handSkeleton else {
             return nil
         }
 
-        let palmJoints: [HandSkeleton.JointName] = [
-            .wrist,
-            .indexFingerMetacarpal,
-            .middleFingerMetacarpal,
-            .ringFingerMetacarpal,
-            .littleFingerMetacarpal
-        ]
+        let joint = skeleton.joint(jointName)
+        guard joint.isTracked else { return nil }
 
-        let trackedPositions = palmJoints.compactMap { jointName -> SIMD3<Float>? in
-            let joint = skeleton.joint(jointName)
-            guard joint.isTracked else { return nil }
+        let originFromJointTransform = handAnchor.originFromAnchorTransform * joint.anchorFromJointTransform
+        return originFromJointTransform.columns.3.xyz
+    }
 
-            let originFromJointTransform = handAnchor.originFromAnchorTransform * joint.anchorFromJointTransform
-            return originFromJointTransform.columns.3.xyz
+    // Payload: user ID, then [tracked, x, y, z] for palm, five fingertips, and two forearm joints.
+    func sendHandPointsToUnity(
+        from handAnchor: HandAnchor?,
+        chirality: HandAnchor.Chirality
+    ) {
+        guard appModel.isIpEntered else { return }
+
+        let positions = [estimatedPalmPosition(from: handAnchor)]
+            + fingertipJointNames.map { jointPosition($0, from: handAnchor) }
+            + forearmJointNames.map { jointPosition($0, from: handAnchor) }
+
+        var values: [any OSCValue] = [appModel.userID]
+        for position in positions {
+            guard let position else {
+                values.append(Float(0))
+                values.append(Float(0))
+                values.append(Float(0))
+                values.append(Float(0))
+                continue
+            }
+
+            let unityPosition = appModel.oscPosition(fromRealityKit: position)
+            values.append(Float(1))
+            values.append(unityPosition.x)
+            values.append(unityPosition.y)
+            values.append(unityPosition.z)
         }
 
-        guard !trackedPositions.isEmpty else { return nil }
-
-        let sum = trackedPositions.reduce(SIMD3<Float>.zero) { partialResult, position in
-            partialResult + position
-        }
-
-        return sum / Float(trackedPositions.count)
+        let side = chirality == .left ? "left" : "right"
+        oscManager.send(
+            .message("/tracking/hand/\(side)/points", values: values),
+            to: appModel.ipAddress,
+            port: appModel.portNumber
+        )
     }
 
     func sendUnityPosition(_ pos: SIMD3<Float>) {
