@@ -21,6 +21,8 @@ struct PersonalPanelView: View {
                     .font(.title3).fontWeight(.semibold)
                 Spacer()
             }
+
+            ImmersiveCountdownView()
             
             // --- Image chosen by (selectedDay, userID) ---
             let asset = ImageMatrix.assetName(for: appModel.selectedDay, userID: appModel.userID)

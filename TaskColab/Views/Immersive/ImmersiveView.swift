@@ -20,6 +20,8 @@ struct ImmersiveView: View {
     
     @State private var deviceTransform: simd_float4x4 = .init()
     @State private var cube: ModelEntity?
+    @State private var leftPalmSphere: ModelEntity?
+    @State private var rightPalmSphere: ModelEntity?
     @StateObject private var wbStore = WhiteboardStore()
     @State private var lastSlimeVRPoseLogDate = Date.distantPast
     
@@ -27,6 +29,7 @@ struct ImmersiveView: View {
 
     private let whiteboardPosition = SIMD3<Float>(0, 1.2, 0.25)
     private let whiteboardSizeMeters = CGSize(width: 1.2, height: 0.928)
+    private let palmSphereRadius: Float = 0.035
 
     var body: some View {
         RealityView { content, attachments in
@@ -41,6 +44,22 @@ struct ImmersiveView: View {
             
             cube = cubeEntity
 
+            let leftSphere = ModelEntity(
+                mesh: .generateSphere(radius: palmSphereRadius),
+                materials: [SimpleMaterial(color: .green, isMetallic: false)]
+            )
+            leftSphere.isEnabled = false
+            content.add(leftSphere)
+            leftPalmSphere = leftSphere
+
+            let rightSphere = ModelEntity(
+                mesh: .generateSphere(radius: palmSphereRadius),
+                materials: [SimpleMaterial(color: .orange, isMetallic: false)]
+            )
+            rightSphere.isEnabled = false
+            content.add(rightSphere)
+            rightPalmSphere = rightSphere
+
             if appModel.isWhiteboardVisible,
                let whiteboard = attachments.entity(for: "immersive-whiteboard") {
                 whiteboard.setTransformMatrix(whiteboardWorldTransform, relativeTo: nil)
@@ -50,16 +69,33 @@ struct ImmersiveView: View {
             Task{
                 let session = ARKitSession()
                 let tracking = WorldTrackingProvider()
-                try await session.run([tracking])
+                let handTracking = HandTrackingProvider.isSupported ? HandTrackingProvider() : nil
+                var isHandTrackingRunning = false
+
+                if let handTracking {
+                    let authorization = await session.requestAuthorization(for: [.worldSensing, .handTracking])
+                    if authorization[.handTracking] == .allowed {
+                        try await session.run([tracking, handTracking])
+                        isHandTrackingRunning = true
+                    } else {
+                        print("Hand tracking authorization was not granted.")
+                        try await session.run([tracking])
+                    }
+                } else {
+                    print("Hand tracking is not supported on this device.")
+                    try await session.run([tracking])
+                }
                 
                 while true {
                     if let cube = cube {
+                        let timestamp = CACurrentMediaTime()
+
                         // Get cube world position
                         let cubeWorldPos = cube.position(relativeTo: nil)
                         appModel.anchorPosition = cubeWorldPos
                         
                         // Get device (head) position from ARKit
-                        if let deviceAnchor = tracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime()) {
+                        if let deviceAnchor = tracking.queryDeviceAnchor(atTimestamp: timestamp) {
                             let deviceTransform = deviceAnchor.originFromAnchorTransform
                             let rot_q = simd_normalize(simd_quatf(deviceTransform))
                             let deviceWorldPos = SIMD3<Float>(
@@ -82,6 +118,12 @@ struct ImmersiveView: View {
 //                            print("---")
                             let rotationRadians = pitchYawRoll(from: rot_q)
                             sendHeadPose(position: deviceTransform.columns.3.xyz, rotationRadians: rotationRadians)
+                        }
+
+                        if isHandTrackingRunning, let handTracking {
+                            let hands = handTracking.handAnchors(at: timestamp)
+                            updatePalmSphere(leftPalmSphere, from: hands.leftHand)
+                            updatePalmSphere(rightPalmSphere, from: hands.rightHand)
                         }
                     }
                     try await Task.sleep(nanoseconds: 33_000_000) // ~30 fps
@@ -132,6 +174,50 @@ struct ImmersiveView: View {
 
     func sendHeadPose(position: SIMD3<Float>, rotationRadians: SIMD3<Float>) {
         sendSlimeVRPose(position: position, rotationRadians: rotationRadians)
+    }
+
+    func updatePalmSphere(_ sphere: ModelEntity?, from handAnchor: HandAnchor?) {
+        guard let sphere else { return }
+
+        guard let palmPosition = estimatedPalmPosition(from: handAnchor) else {
+            sphere.isEnabled = false
+            return
+        }
+
+        sphere.position = palmPosition
+        sphere.isEnabled = true
+    }
+
+    func estimatedPalmPosition(from handAnchor: HandAnchor?) -> SIMD3<Float>? {
+        guard let handAnchor,
+              handAnchor.isTracked,
+              let skeleton = handAnchor.handSkeleton else {
+            return nil
+        }
+
+        let palmJoints: [HandSkeleton.JointName] = [
+            .wrist,
+            .indexFingerMetacarpal,
+            .middleFingerMetacarpal,
+            .ringFingerMetacarpal,
+            .littleFingerMetacarpal
+        ]
+
+        let trackedPositions = palmJoints.compactMap { jointName -> SIMD3<Float>? in
+            let joint = skeleton.joint(jointName)
+            guard joint.isTracked else { return nil }
+
+            let originFromJointTransform = handAnchor.originFromAnchorTransform * joint.anchorFromJointTransform
+            return originFromJointTransform.columns.3.xyz
+        }
+
+        guard !trackedPositions.isEmpty else { return nil }
+
+        let sum = trackedPositions.reduce(SIMD3<Float>.zero) { partialResult, position in
+            partialResult + position
+        }
+
+        return sum / Float(trackedPositions.count)
     }
 
     func sendUnityPosition(_ pos: SIMD3<Float>) {
