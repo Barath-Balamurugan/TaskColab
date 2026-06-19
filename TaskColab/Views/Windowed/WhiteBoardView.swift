@@ -34,7 +34,7 @@ private extension SIMD4<Float> { var points_3d: SIMD3<Float> { .init(x, y, z) } 
 
 struct WhiteBoardView: View {
     var boardWorldTransform: simd_float4x4 = matrix_identity_float4x4
-    var boardSizeMeters: CGSize = .init(width: 1.0, height: 0.6)
+    var boardSizeMeters: CGSize = .init(width: 2.0, height: 1.2)
     var onClose: (() -> Void)? = nil
 
     @EnvironmentObject private var wbStore: WhiteboardStore
@@ -253,7 +253,7 @@ struct WhiteBoardView: View {
                     .buttonStyle(.borderedProminent)
             }
         }
-        .padding()
+//        .padding()
         .onAppear {
             updateRGBA(from: wbStore.currentColor)
             sendWhiteboardPose()

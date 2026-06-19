@@ -30,7 +30,7 @@ struct ImmersiveView: View {
     @Environment(\.immersiveSpaceDisplacement) private var spaceDisplacement  // meters
 
     private let whiteboardPosition = SIMD3<Float>(0, 1.2, 0.25)
-    private let whiteboardSizeMeters = CGSize(width: 1.2, height: 0.928)
+    private let whiteboardSizeMeters = CGSize(width: 0.95, height: 0.85)
     private let palmSphereRadius: Float = 0.035
     private let fingertipSphereRadius: Float = 0.012
     private let forearmSphereRadius: Float = 0.02
