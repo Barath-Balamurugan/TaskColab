@@ -171,8 +171,6 @@ struct ImmersiveView: View {
                             updateJointSpheres(rightHandJointSpheres, from: hands.rightHand)
                             sendHandPointsToUnity(from: hands.leftHand, chirality: .left)
                             sendHandPointsToUnity(from: hands.rightHand, chirality: .right)
-                            sendSlimeVRWristPose(from: hands.leftHand, chirality: .left)
-                            sendSlimeVRWristPose(from: hands.rightHand, chirality: .right)
                         }
                     }
                     try await Task.sleep(nanoseconds: 33_000_000) // ~30 fps
@@ -371,34 +369,6 @@ struct ImmersiveView: View {
         }
     }
 
-    func sendSlimeVRWristPose(
-        from handAnchor: HandAnchor?,
-        chirality: HandAnchor.Chirality
-    ) {
-        guard let wristTransform = jointTransform(.wrist, from: handAnchor) else { return }
-
-        let position = wristTransform.columns.3.xyz
-        let rotationRadians = pitchYawRoll(from: simd_quatf(wristTransform))
-        let oscPosition = appModel.oscPosition(fromRealityKit: position)
-        let oscRotation = appModel.oscRotationDegrees(fromRealityKit: rotationRadians)
-        let side = chirality == .left ? "left" : "right"
-
-        oscManager.send(
-            .message(
-                "/tracking/vrsystem/\(side)wrist/pose",
-                values: [
-                    oscPosition.x,
-                    oscPosition.y,
-                    oscPosition.z,
-                    -oscRotation.x,
-                    -oscRotation.y,
-                    oscRotation.z
-                ]
-            ),
-            to: appModel.ipAddress,
-            port: appModel.slimeVRPortNumber
-        )
-    }
 }
 
 func wrap360(_ d: Float) -> Float {
