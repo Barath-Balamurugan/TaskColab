@@ -16,9 +16,9 @@ struct TaskCardView: View {
                 .font(.title3)
                 .fontWeight(.semibold)
             
-//            Text(task.summary)
-//                .font(.body)
-//                .foregroundStyle(.secondary)
+            Text(task.summary)
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
             
             if !task.usageOfMaps.isEmpty {
                 Text("Conditions")
@@ -59,6 +59,6 @@ struct TaskCardView: View {
         .padding()
         .frame(maxWidth: 1000, alignment: .leading)
         .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }

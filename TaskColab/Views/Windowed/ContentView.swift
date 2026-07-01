@@ -117,10 +117,6 @@ struct ContentView: View {
                 .foregroundColor(.primary)
                 .padding(.top, 8)
 
-            Spacer(minLength: 26)
-
-            ImmersiveCountdownView()
-
             Spacer(minLength: 24)
 
             Section {
@@ -128,12 +124,16 @@ struct ContentView: View {
                     ForEach(Day.allCases) { day in
                         RadioButton(
                             isSelected: appModel.selectedDay == day,
-                            title: day.title
+                            title: day.title,
+                            isEnabled: day == .day1
                         ) { appModel.selectedDay = day }
                     }
                 }
                 .padding(.vertical, 4)
                 .frame(maxWidth: 780)
+                .onAppear {
+                    appModel.selectedDay = .day1
+                }
             }
 
             Spacer(minLength: 34)
